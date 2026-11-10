@@ -1,0 +1,31 @@
+# Base de datos PostgreSQL 18 para DESARROLLO LOCAL de Reyes Gestión.
+# Las credenciales se leen de .env.local (DB_USER, DB_PASSWORD, DB_NAME, DB_PORT).
+#
+#   Iniciar:  pnpm db:docker
+#   Detener:  pnpm db:docker:parar
+#
+# Los datos quedan en el volumen "reyes_pgdata" (sobreviven a reinicios).
+services:
+  db:
+    image: postgres:18
+    container_name: reyes-gestion-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-reyes_app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Falta DB_PASSWORD en .env.local}
+      POSTGRES_DB: ${DB_NAME:-reyes_gestion}
+      # UTF-8 y orden alfabético en español (ñ, tildes)
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale-provider=icu --icu-locale=es-CL --locale=C.UTF-8"
+      TZ: ${APP_TIMEZONE:-America/Santiago}
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - reyes_pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  reyes_pgdata:

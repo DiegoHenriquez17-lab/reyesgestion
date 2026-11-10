@@ -1,0 +1,32 @@
+# Dependencias
+/node_modules
+/.pnp
+.pnp.*
+
+# Next.js
+/.next/
+/.next-oficial/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# Variables de entorno: SOLO se versiona la plantilla
+.env*
+!.env.example
+!.env.oficial.example
+
+# Archivos subidos y respaldos (datos personales: nunca a git)
+/storage/*
+!/storage/.gitkeep
+/storage-oficial/
+/respaldos/*
+!/respaldos/.gitkeep
+
+# Sistema / editores
+.DS_Store
+desktop.ini
+Thumbs.db
+*.pem
+*.log
+/coverage

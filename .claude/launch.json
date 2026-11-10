@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "reyes-gestion",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "dev"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "reyes-gestion-oficial",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "oficial:app"
+      ],
+      "port": 3001
+    }
+  ]
+}
