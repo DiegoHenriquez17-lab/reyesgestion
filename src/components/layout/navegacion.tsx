@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   Bell,
   BookUser,
+  Bus,
   CalendarCheck,
   CalendarClock,
   FileBarChart,
@@ -13,6 +14,7 @@ import {
   LayoutDashboard,
   Lock,
   Menu,
+  Route,
   Search,
   Settings,
   Upload,
@@ -39,6 +41,14 @@ const SECCIONES = [
       { href: "/mensualidades", texto: "Mensualidades", icono: CalendarCheck },
       { href: "/informes", texto: "Informes", icono: FileBarChart },
       { href: "/cierres", texto: "Cierre de mes", icono: Lock },
+    ],
+  },
+  {
+    // Versión 2 agregará aquí: Conductores, Documentos y vencimientos, Mantenciones
+    titulo: "Flota y servicios",
+    items: [
+      { href: "/buses", texto: "Buses", icono: Bus },
+      { href: "/servicios", texto: "Servicios", icono: Route },
     ],
   },
   {

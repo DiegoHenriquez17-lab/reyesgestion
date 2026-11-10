@@ -2,8 +2,8 @@ import Link from "next/link";
 import { requerirUsuario } from "@/server/auth/sesion";
 import { listarBuses } from "@/server/modulos/catalogos";
 import { EncabezadoPagina, Insignia, Tarjeta } from "@/components/ui/basicos";
-import { accionGuardarBus } from "../acciones";
-import { FormularioBus } from "../formularios-catalogo";
+import { accionGuardarBus } from "./acciones";
+import { FormularioBus } from "./formulario";
 
 export const metadata = { title: "Buses" };
 
@@ -14,7 +14,6 @@ export default async function PaginaBuses() {
     <>
       <EncabezadoPagina
         titulo="Buses"
-        volver={{ href: "/configuracion", texto: "Configuración" }}
         descripcion="En la Versión 2 aquí se agregarán documentos, vencimientos (revisión técnica, SOAP, permisos) y mantenciones."
       />
       <Tarjeta titulo="Agregar bus" className="mb-6">

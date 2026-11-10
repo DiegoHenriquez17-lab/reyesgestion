@@ -6,7 +6,7 @@ import { EncabezadoPagina, Insignia, Tarjeta } from "@/components/ui/basicos";
 import { ROL_ETIQUETA } from "@/lib/constantes";
 import { formatearFechaHora } from "@/lib/formato";
 import { accionGuardarUsuario } from "../acciones";
-import { FormularioUsuario } from "../formularios-catalogo";
+import { FormularioUsuario } from "./formulario";
 
 export const metadata = { title: "Usuarios" };
 

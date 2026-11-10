@@ -5,12 +5,10 @@ import { z } from "zod";
 import { ejecutarAccion } from "@/server/acciones";
 import { auditar } from "@/server/auditoria";
 import { guardarConfig, leerConfig } from "@/server/configuracion";
-import { guardarBus, guardarServicio } from "@/server/modulos/catalogos";
 import { hashClave, problemaDeClave } from "@/server/auth/clave";
 import { db } from "@/server/db";
 import { sesiones, usuarios } from "@/server/db/schema";
 import { ErrorNegocio } from "@/server/errores";
-import { formDataAObjeto } from "@/lib/validaciones";
 import { ROLES } from "@/lib/constantes";
 
 export async function accionGuardarGeneral(_: unknown, fd: FormData) {
@@ -42,21 +40,6 @@ export async function accionGuardarGeneral(_: unknown, fd: FormData) {
   );
 }
 
-export async function accionGuardarBus(id: number | null, _: unknown, fd: FormData) {
-  return ejecutarAccion((ctx) => guardarBus(ctx, id, formDataAObjeto(fd, ["activo"])), {
-    roles: ["admin", "operador"],
-    revalidar: ["/configuracion/buses", "/alumnos"],
-    mensaje: "Bus guardado.",
-  });
-}
-
-export async function accionGuardarServicio(id: number | null, _: unknown, fd: FormData) {
-  return ejecutarAccion((ctx) => guardarServicio(ctx, id, formDataAObjeto(fd, ["activo"])), {
-    roles: ["admin", "operador"],
-    revalidar: ["/configuracion/servicios", "/alumnos"],
-    mensaje: "Servicio guardado.",
-  });
-}
 
 const esquemaUsuario = z.object({
   nombre: z.string().trim().min(2, "Indica el nombre"),

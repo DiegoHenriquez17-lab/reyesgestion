@@ -41,8 +41,9 @@ sistemareyes/
     │   ├── (app)/             ← todo lo que requiere sesión (una carpeta por módulo)
     │   │   ├── page.tsx       ← panel principal
     │   │   ├── alumnos/ pagos/ mensualidades/ informes/ importar/
+    │   │   ├── buses/ servicios/   ← flota (V2: conductores, documentos, mantenciones)
     │   │   ├── alertas/ recordatorios/ cierres/ auditoria/ personas/ buscar/
-    │   │   └── configuracion/ (buses, servicios, alertas, usuarios)
+    │   │   └── configuracion/ (empresa y cobranza, reglas de alerta, usuarios)
     │   └── api/               ← descarga de documentos e informes (con sesión)
     ├── components/            ← componentes visuales reutilizables
     ├── lib/                   ← utilidades compartidas (RUT, fechas, montos, catálogos, validaciones)

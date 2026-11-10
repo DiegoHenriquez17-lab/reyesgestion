@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Bus, Route, Users } from "lucide-react";
+import { Bell, Users } from "lucide-react";
 import { requerirUsuario } from "@/server/auth/sesion";
 import { leerVariasConfig } from "@/server/configuracion";
 import { iaHabilitada, entorno } from "@/server/entorno";
@@ -9,8 +9,6 @@ import { FormularioGeneral } from "./general";
 export const metadata = { title: "Configuración" };
 
 const SECCIONES = [
-  { href: "/configuracion/buses", texto: "Buses", desc: "Números internos y patentes", icono: Bus },
-  { href: "/configuracion/servicios", texto: "Servicios", desc: "Recorridos y tipos de servicio", icono: Route },
   { href: "/configuracion/alertas", texto: "Reglas de alerta", desc: "Días de aviso y colores", icono: Bell, admin: true },
   { href: "/configuracion/usuarios", texto: "Usuarios", desc: "Accesos y permisos", icono: Users, admin: true },
 ];
@@ -27,8 +25,8 @@ export default async function PaginaConfiguracion() {
   ]);
   return (
     <>
-      <EncabezadoPagina titulo="Configuración" />
-      <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <EncabezadoPagina titulo="Configuración" descripcion="Ajustes del sistema. Buses y servicios están en el menú lateral, sección «Flota y servicios»." />
+      <div className="mb-6 grid gap-3 sm:grid-cols-2">
         {SECCIONES.filter((s) => !s.admin || usuario.rol === "admin").map((s) => (
           <Link key={s.href} href={s.href} className="tarjeta flex items-center gap-3 p-4 transition hover:border-marca-300">
             <s.icono className="size-6 text-marca-700" />

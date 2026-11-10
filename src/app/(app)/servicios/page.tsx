@@ -3,8 +3,8 @@ import { listarServicios } from "@/server/modulos/catalogos";
 import { EncabezadoPagina, Insignia, Tarjeta } from "@/components/ui/basicos";
 import { TIPO_SERVICIO_ETIQUETA } from "@/lib/constantes";
 import { formatearPesos } from "@/lib/formato";
-import { accionGuardarServicio } from "../acciones";
-import { FormularioServicio } from "../formularios-catalogo";
+import { accionGuardarServicio } from "./acciones";
+import { FormularioServicio } from "./formulario";
 
 export const metadata = { title: "Servicios" };
 
@@ -13,7 +13,7 @@ export default async function PaginaServicios() {
   const lista = await listarServicios();
   return (
     <>
-      <EncabezadoPagina titulo="Servicios" volver={{ href: "/configuracion", texto: "Configuración" }} />
+      <EncabezadoPagina titulo="Servicios" descripcion="Recorridos y tipos de servicio que se asignan a cada alumno." />
       <Tarjeta titulo="Agregar servicio" className="mb-6">
         <FormularioServicio accion={accionGuardarServicio.bind(null, null)} />
       </Tarjeta>

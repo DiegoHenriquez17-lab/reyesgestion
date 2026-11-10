@@ -87,9 +87,9 @@ async function analizarFilaAlumnoBase(
   const dia = vacio(m.dia_vencimiento) ? null : Number(String(m.dia_vencimiento).replace(/\D/g, ""));
 
   const bus = vacio(m.bus) ? null : await resolverBus(m.bus);
-  if (!vacio(m.bus) && !bus) adv.push(`El bus «${m.bus}» no existe en el sistema. Créalo en Configuración → Buses y vuelve a analizar, o quedará sin bus.`);
+  if (!vacio(m.bus) && !bus) adv.push(`El bus «${m.bus}» no existe en el sistema. Créalo en el menú Flota y servicios → Buses y vuelve a analizar, o quedará sin bus.`);
   const servicio = vacio(m.servicio) ? null : await resolverServicio(m.servicio);
-  if (!vacio(m.servicio) && !servicio) adv.push(`El servicio «${m.servicio}» no existe. Créalo en Configuración → Servicios o quedará sin servicio.`);
+  if (!vacio(m.servicio) && !servicio) adv.push(`El servicio «${m.servicio}» no existe. Créalo en el menú Flota y servicios → Servicios o quedará sin servicio.`);
 
   let apoderado: Record<string, unknown> | null = null;
   const nombreAp = texto(m.apoderado_nombre);
