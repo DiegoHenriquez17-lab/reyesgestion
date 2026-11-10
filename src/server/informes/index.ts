@@ -462,12 +462,28 @@ export async function generarInforme(codigo: CodigoInforme, p: { periodo?: strin
 
 /** Recaudación de los últimos N meses (para el gráfico del panel). */
 export async function tendenciaRecaudacion(meses = 6) {
+  // Dos consultas agrupadas en paralelo (en vez de varias por mes): importante cuando la base está lejos
   const fin = `${hoy().slice(0, 7)}-01`;
-  const salida: { periodo: string; esperado: number; recaudado: number }[] = [];
-  for (let i = meses - 1; i >= 0; i--) {
-    const periodo = sumarMeses(fin, -i);
-    const r = await resumenRecaudacion(periodo);
-    salida.push({ periodo, esperado: r.esperado, recaudado: r.recaudado });
-  }
-  return salida;
+  const inicio = sumarMeses(fin, -(meses - 1));
+  const enRango = sql`${mensualidades.periodo} between ${inicio} and ${fin}`;
+  const [esperados, recaudados] = await Promise.all([
+    db
+      .select({ periodo: sql<string>`${mensualidades.periodo}::text`, total: sql<number>`sum(${mensualidades.monto})::int` })
+      .from(mensualidades)
+      .where(and(enRango, ne(mensualidades.estado, "anulada")))
+      .groupBy(mensualidades.periodo),
+    db
+      .select({ periodo: sql<string>`${mensualidades.periodo}::text`, total: sql<number>`sum(${pagoAplicaciones.monto})::int` })
+      .from(pagoAplicaciones)
+      .innerJoin(pagos, and(eq(pagos.id, pagoAplicaciones.pagoId), eq(pagos.estadoVerificacion, "verificado")))
+      .innerJoin(mensualidades, eq(mensualidades.id, pagoAplicaciones.mensualidadId))
+      .where(and(enRango, ne(mensualidades.estado, "anulada")))
+      .groupBy(mensualidades.periodo),
+  ]);
+  const esp = new Map(esperados.map((e) => [e.periodo, e.total]));
+  const rec = new Map(recaudados.map((r) => [r.periodo, r.total]));
+  return Array.from({ length: meses }, (_, i) => {
+    const periodo = sumarMeses(inicio, i);
+    return { periodo, esperado: esp.get(periodo) ?? 0, recaudado: rec.get(periodo) ?? 0 };
+  });
 }
