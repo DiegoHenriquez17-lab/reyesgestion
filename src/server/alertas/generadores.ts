@@ -13,9 +13,11 @@ import {
 } from "@/server/db/schema";
 import { leerConfig } from "@/server/configuracion";
 import { diferenciaDias, fechaVencimiento, inicioDeMes, sumarDias, sumarMeses } from "@/lib/fechas";
-import { formatearPeriodo, formatearPesos, nombreCompleto } from "@/lib/formato";
+import { formatearNumero, formatearPeriodo, formatearPesos, nombreCompleto } from "@/lib/formato";
 import type { Modulo, NivelAlerta } from "@/lib/constantes";
 import { nivelDeParametro, nivelPorUmbral, textoPlazo } from "./umbrales";
+import { listarDocumentosControl, listarPlanes } from "@/server/modulos/flota";
+import { listarContratos, listarCotizaciones, listarViajes } from "@/server/modulos/operaciones";
 
 export type AlertaCandidata = {
   clave: string;
@@ -62,6 +64,54 @@ async function mensualidadesAbiertas(tx: DbOTx) {
 }
 
 const GENERADORES: Record<string, Generador> = {
+  "pagos.conciliado": async (tx, regla) => {
+    const dias = Number(regla.parametros.dias ?? 7);
+    if (!Number.isFinite(dias) || dias < 1) return [];
+    const filas = await tx.select({ id: pagos.id, monto: pagos.monto, nombre: pagos.nombreOrigen }).from(pagos).where(and(
+      isNull(pagos.anuladoEn), eq(pagos.estadoVerificacion, "verificado"), eq(pagos.estadoConciliacion, "conciliado"),
+      sql`${pagos.actualizadoEn} >= now() - (${dias}::double precision * interval '1 day')`,
+    ));
+    const nivel = nivelDeParametro(regla.parametros.nivel, "info");
+    return filas.map((p) => ({ ...base(regla, "pago", p.id), nivel, titulo: `Pago #${p.id} conciliado`,
+      detalle: [p.nombre, formatearPesos(p.monto)].filter(Boolean).join(" · "), enlace: `/pagos/${p.id}` }));
+  },
+  "contratos.vencimiento": async (tx, regla, hoy) => (await listarContratos(tx)).flatMap(({ contrato: c, cliente }) => {
+    if (!c.activo) return [];
+    const dias = diferenciaDias(hoy, c.fechaVencimiento);
+    const nivel = nivelPorUmbral(dias, regla.umbrales);
+    return nivel ? [{ ...base(regla, "contrato", c.id), nivel, titulo: c.titulo,
+      detalle: `${nombreCompleto(cliente)} · ${textoPlazo(dias, "vence", "vencido")}.`, enlace: `/operaciones#contrato-${c.id}`, fechaReferencia: c.fechaVencimiento }] : [];
+  }),
+  "servicios.cotizacion": async (tx, regla, hoy) => (await listarCotizaciones(tx, "pendiente")).flatMap(({ cotizacion: c, cliente, servicio }) => {
+    const nivel = nivelPorUmbral(diferenciaDias(hoy, c.fechaServicio), regla.umbrales);
+    return nivel ? [{ ...base(regla, "cotizacion", c.id), nivel, titulo: `Cotización pendiente · ${servicio}`, detalle: nombreCompleto(cliente),
+      enlace: `/operaciones#cotizacion-${c.id}`, fechaReferencia: c.fechaServicio }] : [];
+  }),
+  "servicios.viaje": async (tx, regla, hoy) => (await listarViajes(tx)).flatMap(({ viaje: v, cliente, servicio, bus }) => {
+    if (v.estado !== "programado" && v.estado !== "confirmado") return [];
+    const nivel = nivelPorUmbral(diferenciaDias(hoy, v.fecha), regla.umbrales);
+    if (!nivel) return [];
+    const estado = v.estado === "confirmado" ? "confirmado" : "por confirmar";
+    const preparacion = [bus ? `Bus ${bus} asignado` : "Bus por asignar", v.conductorId ? "Conductor asignado" : "Conductor por asignar",
+      v.documentacionLista ? "Documentación lista" : "Documentación pendiente"];
+    return [{ ...base(regla, "viaje", v.id), nivel, titulo: `Viaje ${estado} · ${servicio}`, detalle: [nombreCompleto(cliente), ...preparacion].join(" · "),
+      enlace: `/operaciones#viaje-${v.id}`, fechaReferencia: v.fecha }];
+  }),
+  "mantenciones.fecha": async (tx, regla, hoy) => (await listarPlanes(tx)).flatMap(({ plan, numero }) => {
+    if (!plan.activo || !plan.proximaFecha) return [];
+    const dias = diferenciaDias(hoy, plan.proximaFecha);
+    const nivel = nivelPorUmbral(dias, regla.umbrales);
+    return nivel ? [{ ...base(regla, "plan_mantencion", plan.id), nivel, titulo: `Bus ${numero} · ${plan.tarea}`,
+      detalle: `Mantención ${textoPlazo(dias, "programada", "atrasada")}.`, enlace: `/flota#plan-${plan.id}`, fechaReferencia: plan.proximaFecha }] : [];
+  }),
+  "mantenciones.kilometraje": async (tx, regla) => (await listarPlanes(tx)).flatMap(({ plan, numero, kilometraje }) => {
+    if (!plan.activo || plan.proximoKm === null || kilometraje === null) return [];
+    const km = plan.proximoKm - kilometraje;
+    const nivel = nivelPorUmbral(km, regla.umbrales);
+    if (!nivel) return [];
+    const detalle = km > 0 ? `Próxima mantención en ${formatearNumero(km)} km.` : `Kilometraje programado alcanzado (${formatearNumero(plan.proximoKm)} km).`;
+    return [{ ...base(regla, "plan_mantencion", plan.id), nivel, titulo: `Bus ${numero} · ${plan.tarea}`, detalle, enlace: `/flota#plan-${plan.id}` }];
+  }),
   "pagos.mensualidad": async (tx, regla, hoy) => {
     const filas = await mensualidadesAbiertas(tx);
     const salida: AlertaCandidata[] = [];
@@ -205,7 +255,7 @@ const GENERADORES: Record<string, Generador> = {
         nivel,
         titulo: "Devolución pendiente",
         detalle: `${formatearPesos(d.monto)} — ${d.motivo}`,
-        enlace: d.alumnoId ? `/alumnos/${d.alumnoId}` : "/pagos",
+        enlace: `/devoluciones#devolucion-${d.id}`,
         fechaReferencia: d.fechaSolicitud,
       });
     }
@@ -293,5 +343,19 @@ const GENERADORES: Record<string, Generador> = {
 };
 
 export function generadorDe(codigo: string): Generador | undefined {
+  if (codigo.startsWith("buses.documento.") || codigo.startsWith("conductores.documento.")) {
+    return async (tx, regla, hoy) => {
+      const titular = regla.modulo === "buses" ? "bus" : "conductor";
+      const tipo = String(regla.parametros.tipo ?? "");
+      if (!tipo) return [];
+      return (await listarDocumentosControl(tx, titular, tipo)).flatMap(({ documento, bus, nombres, apellidos }) => {
+        const dias = diferenciaDias(hoy, documento.fechaVencimiento);
+        const nivel = nivelPorUmbral(dias, regla.umbrales);
+        return nivel ? [{ ...base(regla, "documento_control", documento.id), nivel,
+          titulo: `${bus ? `Bus ${bus}` : nombreCompleto({ nombres: nombres ?? "", apellidos })} · ${documento.tipo}`,
+          detalle: `Documento ${textoPlazo(dias, "vence", "vencido")}.`, enlace: `/flota#documento-${documento.id}`, fechaReferencia: documento.fechaVencimiento }] : [];
+      });
+    };
+  }
   return GENERADORES[codigo];
 }

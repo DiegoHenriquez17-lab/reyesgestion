@@ -2,23 +2,28 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/server/db";
 import { cierresMes, usuarios } from "@/server/db/schema";
-import { auditar, type Contexto } from "@/server/auditoria";
+import { auditar, bloquearCobranza, type Contexto } from "@/server/auditoria";
 import { ErrorNegocio } from "@/server/errores";
-import { resumenRecaudacion } from "@/server/informes";
+import { informeRecaudacion, resumenRecaudacion } from "@/server/informes";
 import { formatearPeriodo } from "@/lib/formato";
 
-/** Cierra un mes guardando la fotografía de sus totales. */
+/** Cierra un mes guardando los totales y el informe detallado. */
 export async function cerrarMes(ctx: Contexto, periodo: string) {
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const [existente] = await tx.select().from(cierresMes).where(eq(cierresMes.periodo, periodo));
     if (existente?.estado === "cerrado") throw new ErrorNegocio(`${formatearPeriodo(periodo)} ya está cerrado.`);
     const resumen = await resumenRecaudacion(periodo, tx);
+    const informe = await informeRecaudacion(periodo, tx, resumen);
     const valores = {
       periodo,
       estado: "cerrado" as const,
-      resumen,
+      resumen: { ...resumen, informe },
       cerradoPor: ctx.usuarioId,
       cerradoEn: new Date(),
+      reabiertoPor: null,
+      reabiertoEn: null,
+      motivoReapertura: null,
     };
     const [c] = existente
       ? await tx.update(cierresMes).set(valores).where(eq(cierresMes.id, existente.id)).returning()
@@ -38,6 +43,7 @@ export async function cerrarMes(ctx: Contexto, periodo: string) {
 export async function reabrirMes(ctx: Contexto, periodo: string, motivo: string) {
   if (!motivo?.trim()) throw new ErrorNegocio("Indica el motivo de la reapertura.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const [c] = await tx.select().from(cierresMes).where(eq(cierresMes.periodo, periodo));
     if (!c || c.estado !== "cerrado") throw new ErrorNegocio("El mes no está cerrado.");
     await tx

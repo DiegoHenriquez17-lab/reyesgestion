@@ -44,7 +44,7 @@ export function aplicarMapeo(original: Record<string, unknown>, mapeo: Record<st
 function advertenciasDeConfianza(confianzas: Confianzas | undefined, etiquetas: Record<string, string>) {
   if (!confianzas) return [];
   return Object.entries(confianzas)
-    .filter(([, n]) => n === "baja")
+    .filter(([, n]) => n !== "alta")
     .map(([campo]) => `Lectura dudosa en «${etiquetas[campo] ?? campo}»: revisar contra el documento.`);
 }
 
@@ -113,7 +113,7 @@ async function analizarFilaAlumnoBase(
   }
 
   const datos = {
-    persona: { nombres, apellidos, rut, direccion: texto(m.direccion), comuna: texto(m.comuna) },
+    persona: { nombres, apellidos, rut, telefono: texto(m.alumno_telefono), direccion: texto(m.direccion), comuna: texto(m.comuna) },
     alumno: {
       establecimiento: texto(m.establecimiento),
       curso: texto(m.curso),
@@ -141,7 +141,7 @@ async function analizarFilaAlumnoBase(
   );
 
   // Datos que no se pudieron interpretar: el usuario debe revisarlos antes de guardar
-  const dudoso = (!vacio(m.tarifa) && tarifa === null) || Object.values(contexto.confianzas ?? {}).includes("baja");
+  const dudoso = (!vacio(m.tarifa) && tarifa === null) || Object.values(contexto.confianzas ?? {}).some((n) => n !== "alta");
 
   // ¿Ya existe?
   const candidatos = await posiblesDuplicados({ nombres, apellidos, rut }, { limite: 3 });
@@ -201,7 +201,7 @@ async function analizarFilaAlumnoBase(
       return { datos, accion: "sin_cambios", registroExistenteId: ficha.alumno.id, registroExistente: ficha.resumen, diferencias, advertencias: adv, decision: "omitir" };
     }
     if (seguro) {
-      return { datos, accion: "actualizar", registroExistenteId: ficha.alumno.id, registroExistente: ficha.resumen, diferencias, advertencias: adv, decision: "actualizar" };
+      return { datos, accion: "actualizar", registroExistenteId: ficha.alumno.id, registroExistente: ficha.resumen, diferencias, advertencias: adv, decision: null };
     }
   }
   return {
@@ -261,6 +261,7 @@ function compararAlumno(
     if (normalizarTexto(actual) !== normalizarTexto(nuevo)) dif.push({ campo, actual: actual ?? null, nuevo: mostrarNuevo });
   };
   comparar("RUT", ficha.persona.rut, datos.persona.rut);
+  comparar("Teléfono", ficha.persona.telefono, datos.persona.telefono);
   comparar("Domicilio", ficha.persona.direccion, datos.persona.direccion);
   comparar("Comuna", ficha.persona.comuna, datos.persona.comuna);
   comparar("Colegio", ficha.alumno?.establecimiento, datos.alumno.establecimiento);
@@ -405,8 +406,7 @@ export async function analizarFilaPago(
   }
   if (sugerencia && sugerencia.puntaje < preseleccion) sugerencia = sugerencia.puntaje >= preseleccion * 0.6 ? sugerencia : null;
   datos.sugerencia = sugerencia;
-  // Se preselecciona solo si la coincidencia es muy alta y hay meses con saldo; el usuario igual lo revisa
-  datos.conciliar = !!sugerencia && sugerencia.puntaje >= 0.9 && sugerencia.aplicaciones.length > 0;
+  // Cada conciliación requiere una selección explícita.
   if (!sugerencia) adv.push("Sin coincidencia clara con un alumno: quedará como PAGO POR CONCILIAR.");
 
   return { datos, accion: "crear", registroExistenteId: null, registroExistente: null, diferencias: [], advertencias: adv, decision: "crear" };

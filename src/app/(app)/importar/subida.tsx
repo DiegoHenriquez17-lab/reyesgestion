@@ -12,7 +12,7 @@ export function FormularioSubida({ destinoInicial, modoFoto, iaDisponible }: { d
   const [destino, setDestino] = useState<DestinoImportacion>(destinoInicial);
   const [archivo, setArchivo] = useState<File | null>(null);
   const ext = archivo?.name.split(".").pop()?.toLowerCase() ?? "";
-  const necesitaIa = !!archivo && (archivo.type.startsWith("image/") || ext === "pdf");
+  const necesitaIa = !!archivo && (archivo.type.startsWith("image/") || ["pdf", "jpg", "jpeg", "png", "webp", "heic", "heif"].includes(ext));
   const esWord = ext === "docx";
   const esTabla = ["xlsx", "xlsm", "csv"].includes(ext);
 
@@ -21,11 +21,12 @@ export function FormularioSubida({ destinoInicial, modoFoto, iaDisponible }: { d
       <div className="tarjeta space-y-5 p-5">
         <div>
           <p className="etiqueta">¿Qué información contiene?</p>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-3">
             {(
               [
                 ["alumnos", "Alumnos y apoderados", "Nóminas, planillas de alumnos, buses, tarifas"],
                 ["pagos", "Pagos / comprobantes", "Vouchers, cartolas bancarias, planillas de pagos"],
+                ["conductores", "Conductores", "Nóminas, fichas y vencimientos de licencias"],
               ] as const
             ).map(([v, t, d]) => (
               <label
@@ -87,7 +88,7 @@ export function FormularioSubida({ destinoInicial, modoFoto, iaDisponible }: { d
         {(necesitaIa || esWord) && (
           <div className="space-y-3 rounded-lg bg-violet-50 p-3">
             {!iaDisponible && necesitaIa && (
-              <Aviso tipo="advertencia">La lectura con IA no está configurada todavía (falta ANTHROPIC_API_KEY). Este archivo no se podrá leer.</Aviso>
+              <Aviso tipo="advertencia">Configura las claves de IA para leer este archivo.</Aviso>
             )}
             {esWord && <Casilla nombre="usarIa" etiqueta="Leer con IA (si el Word no es una tabla)" />}
             <p className="text-xs text-violet-900">

@@ -2,7 +2,8 @@ import "server-only";
 import { and, desc, eq, inArray, isNull, ne, or, sql, type SQL } from "drizzle-orm";
 import { db, type DbOTx } from "@/server/db";
 import { alumnos, mensualidades, pagoAplicaciones, pagos, personas } from "@/server/db/schema";
-import { auditar, exigirMotivoSiCerrado, type Contexto } from "@/server/auditoria";
+import { auditar, bloquearCobranza, exigirMotivoSiCerrado, type Contexto } from "@/server/auditoria";
+import { inicioDeMes } from "@/lib/fechas";
 import { ErrorNegocio } from "@/server/errores";
 import { esquemaPago } from "@/lib/validaciones";
 import { formatearPeriodo, formatearPesos, nombreCompleto } from "@/lib/formato";
@@ -52,7 +53,9 @@ export async function pagosSimilares(
 /** Registra un pago (dinero recibido o voucher por verificar) y opcionalmente lo concilia. */
 export async function registrarPago(ctx: Contexto, entrada: EntradaPago, txExterna?: DbOTx) {
   const ejecutar = async (tx: DbOTx) => {
+    await bloquearCobranza(tx);
     const d = esquemaPago.parse(entrada.datos);
+    const periodoCerrado = await exigirMotivoSiCerrado(tx, [inicioDeMes(d.fechaPago)], entrada.motivo);
     if (!entrada.permitirDuplicado) {
       const similares = await pagosSimilares(d, undefined, tx);
       const mismoNumero = similares.find((s) => d.numeroOperacion && s.numeroOperacion === d.numeroOperacion);
@@ -89,6 +92,8 @@ export async function registrarPago(ctx: Contexto, entrada: EntradaPago, txExter
       entidadId: pago.id,
       resumen: `${formatearPesos(pago.monto)} — ${pago.nombreOrigen ?? "sin nombre"} (${pago.estadoVerificacion === "verificado" ? "dinero recibido" : "por verificar"})`,
       despues: pago,
+      motivo: entrada.motivo,
+      periodoCerrado,
     });
 
     let aplicaciones = entrada.aplicaciones ?? [];
@@ -153,7 +158,7 @@ async function aplicarPagoEnTx(tx: DbOTx, ctx: Contexto, pagoId: number, aplicac
     .innerJoin(personas, eq(personas.id, alumnos.personaId))
     .where(inArray(mensualidades.id, validas.map((a) => a.mensualidadId)));
   const porId = new Map(lista.map((l) => [l.m.id, l]));
-  const cerrado = await exigirMotivoSiCerrado(tx, lista.map((l) => l.m.periodo), motivo);
+  const cerrado = await exigirMotivoSiCerrado(tx, [inicioDeMes(pago.fechaPago), ...lista.map((l) => l.m.periodo)], motivo);
 
   const detalle: string[] = [];
   for (const a of validas) {
@@ -218,6 +223,7 @@ export async function conciliarPago(
   opciones: { motivo?: string | null; registrarPagador?: { personaId?: number; nombre?: string } | null } = {},
 ) {
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const resultado = await aplicarPagoEnTx(tx, ctx, pagoId, aplicaciones, opciones.motivo);
     const rp = opciones.registrarPagador;
     if (rp && resultado.alumnoId) {
@@ -245,10 +251,12 @@ export async function conciliarPago(
 export async function quitarAplicacion(ctx: Contexto, aplicacionId: number, motivo: string) {
   if (!motivo?.trim()) throw new ErrorNegocio("Indica el motivo.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const [ap] = await tx.select().from(pagoAplicaciones).where(eq(pagoAplicaciones.id, aplicacionId));
     if (!ap) throw new ErrorNegocio("La aplicación no existe.");
     const [m] = await tx.select().from(mensualidades).where(eq(mensualidades.id, ap.mensualidadId));
-    const cerrado = await exigirMotivoSiCerrado(tx, [m.periodo], motivo);
+    const [pago] = await tx.select({ fechaPago: pagos.fechaPago }).from(pagos).where(eq(pagos.id, ap.pagoId));
+    const cerrado = await exigirMotivoSiCerrado(tx, [m.periodo, inicioDeMes(pago.fechaPago)], motivo);
     await tx.delete(pagoAplicaciones).where(eq(pagoAplicaciones.id, aplicacionId));
     const nueva = await recalcularMensualidad(tx, ap.mensualidadId);
     await actualizarEstadoPago(tx, ap.pagoId);
@@ -266,13 +274,19 @@ export async function quitarAplicacion(ctx: Contexto, aplicacionId: number, moti
 }
 
 export async function cambiarVerificacion(ctx: Contexto, pagoId: number, estado: EstadoVerificacion, motivo?: string | null) {
+  if (!["verificado", "por_verificar", "rechazado"].includes(estado)) throw new ErrorNegocio("Estado de verificación inválido.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const [p] = await tx.select().from(pagos).where(eq(pagos.id, pagoId));
     if (!p) throw new ErrorNegocio("El pago no existe.");
+    if (p.anuladoEn) throw new ErrorNegocio("El pago está anulado.");
     if (estado === "rechazado") {
       if (!motivo?.trim()) throw new ErrorNegocio("Indica por qué se rechaza el pago.");
       if (p.montoAplicado > 0) throw new ErrorNegocio("Primero quita las aplicaciones del pago antes de rechazarlo.");
     }
+    const aplicaciones = await tx.select({ periodo: mensualidades.periodo }).from(pagoAplicaciones)
+      .innerJoin(mensualidades, eq(mensualidades.id, pagoAplicaciones.mensualidadId)).where(eq(pagoAplicaciones.pagoId, pagoId));
+    const periodoCerrado = await exigirMotivoSiCerrado(tx, [inicioDeMes(p.fechaPago), ...aplicaciones.map((a) => a.periodo)], motivo);
     const [n] = await tx.update(pagos).set({ estadoVerificacion: estado }).where(eq(pagos.id, pagoId)).returning();
     await auditar(tx, ctx, {
       accion: estado === "verificado" ? "verificar_pago" : "cambiar_verificacion",
@@ -282,6 +296,7 @@ export async function cambiarVerificacion(ctx: Contexto, pagoId: number, estado:
       antes: p,
       despues: n,
       motivo,
+      periodoCerrado,
     });
     return n;
   });
@@ -291,6 +306,7 @@ export async function cambiarVerificacion(ctx: Contexto, pagoId: number, estado:
 export async function anularPago(ctx: Contexto, pagoId: number, motivo: string) {
   if (!motivo?.trim()) throw new ErrorNegocio("Indica el motivo de la anulación.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const [p] = await tx.select().from(pagos).where(eq(pagos.id, pagoId));
     if (!p) throw new ErrorNegocio("El pago no existe.");
     if (p.anuladoEn) throw new ErrorNegocio("El pago ya está anulado.");
@@ -298,7 +314,7 @@ export async function anularPago(ctx: Contexto, pagoId: number, motivo: string) 
     const ms = aps.length
       ? await tx.select().from(mensualidades).where(inArray(mensualidades.id, aps.map((a) => a.mensualidadId)))
       : [];
-    const cerrado = await exigirMotivoSiCerrado(tx, ms.map((m) => m.periodo), motivo);
+    const cerrado = await exigirMotivoSiCerrado(tx, [inicioDeMes(p.fechaPago), ...ms.map((m) => m.periodo)], motivo);
     await tx.delete(pagoAplicaciones).where(eq(pagoAplicaciones.pagoId, pagoId));
     for (const a of aps) await recalcularMensualidad(tx, a.mensualidadId);
     const [n] = await tx

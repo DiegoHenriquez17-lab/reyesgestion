@@ -1,6 +1,6 @@
 "use server";
 
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { usuarios } from "@/server/db/schema";
 import { cerrarSesion, iniciarSesion } from "@/server/auth/sesion";
 import { hashClave, problemaDeClave, verificarClave } from "@/server/auth/clave";
 import { auditar } from "@/server/auditoria";
+import { entorno } from "@/server/entorno";
 import type { ResultadoAccion } from "@/lib/utils";
 
 // Limitador simple de intentos fallidos (por IP + correo), en memoria del servidor
@@ -30,7 +31,9 @@ export async function accionLogin(_: unknown, fd: FormData): Promise<ResultadoAc
   const [u] = await db.select().from(usuarios).where(sql`lower(${usuarios.email}) = ${email}`);
   const valido = u && u.activo && (await verificarClave(u.passwordHash, clave));
   if (!valido) {
-    intentos.set(clavePrueba, { n: (registro?.n ?? 0) + 1, hasta: Date.now() + BLOQUEO_MS });
+    const ahora = Date.now();
+    for (const [llave, intento] of intentos) if (intento.hasta <= ahora) intentos.delete(llave);
+    intentos.set(clavePrueba, { n: (intentos.get(clavePrueba)?.n ?? 0) + 1, hasta: ahora + BLOQUEO_MS });
     await auditar(db, { usuarioId: u?.id ?? null, usuarioNombre: email, origen: "ui", ip }, {
       accion: "login_fallido",
       entidad: "usuario",
@@ -66,8 +69,8 @@ const esquemaPrimerUsuario = z
 
 /** Crea el primer administrador. Solo funciona si la base de datos no tiene usuarios. */
 export async function accionPrimerUsuario(_: unknown, fd: FormData): Promise<ResultadoAccion> {
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(usuarios);
-  if (total > 0) return { ok: false, error: "Ya existe un usuario. Inicia sesión." };
+  if (!entorno.REGISTRO_INICIAL_WEB) return { ok: false, error: "La creación del administrador inicial desde la web está deshabilitada." };
+  if (await hayUsuarios()) return { ok: false, error: "Ya existe un usuario. Inicia sesión." };
   const r = esquemaPrimerUsuario.safeParse(Object.fromEntries(fd));
   if (!r.success) {
     const errores: Record<string, string[]> = {};
@@ -76,23 +79,23 @@ export async function accionPrimerUsuario(_: unknown, fd: FormData): Promise<Res
   }
   const problema = problemaDeClave(r.data.clave);
   if (problema) return { ok: false, error: problema, errores: { clave: [problema] } };
-  const [u] = await db
-    .insert(usuarios)
-    .values({ nombre: r.data.nombre, email: r.data.email, passwordHash: await hashClave(r.data.clave), rol: "admin" })
-    .returning();
-  await auditar(db, { usuarioId: u.id, usuarioNombre: u.nombre, origen: "ui" }, {
-    accion: "crear",
-    entidad: "usuario",
-    entidadId: u.id,
-    resumen: `Primer administrador: ${u.nombre}`,
+  const passwordHash = await hashClave(r.data.clave);
+  const u = await db.transaction(async (tx) => {
+    await tx.execute(sql`lock table ${usuarios} in share row exclusive mode`);
+    const existente = await tx.select({ id: usuarios.id }).from(usuarios).limit(1);
+    if (existente.length) return null;
+    const [nuevo] = await tx.insert(usuarios).values({ nombre: r.data.nombre, email: r.data.email, passwordHash, rol: "admin" }).returning();
+    await auditar(tx, { usuarioId: nuevo.id, usuarioNombre: nuevo.nombre, origen: "ui" }, {
+      accion: "crear", entidad: "usuario", entidadId: nuevo.id, resumen: `Primer administrador: ${nuevo.nombre}`,
+    });
+    return nuevo;
   });
+  if (!u) return { ok: false, error: "Ya existe un usuario. Inicia sesión." };
   await iniciarSesion(u.id);
   redirect("/");
 }
 
 export async function hayUsuarios() {
-  const [{ total }] = await db.select({ total: sql<number>`count(*)::int` }).from(usuarios);
-  return total > 0;
+  const filas = await db.select({ id: usuarios.id }).from(usuarios).limit(1);
+  return filas.length > 0;
 }
-
-void eq;

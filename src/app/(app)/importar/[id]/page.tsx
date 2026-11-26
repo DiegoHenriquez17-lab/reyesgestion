@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requerirUsuario } from "@/server/auth/sesion";
-import { obtenerImportacion } from "@/server/importacion";
+import { datosParaRevision, obtenerImportacion } from "@/server/importacion";
 import { Aviso, EncabezadoPagina, Insignia, Tarjeta } from "@/components/ui/basicos";
 import { BotonAccion } from "@/components/ui/acciones";
 import {
@@ -11,6 +11,7 @@ import {
   type AccionFila,
 } from "@/lib/constantes";
 import { CAMPOS_IMPORTACION } from "@/lib/importacion-campos";
+import { PROVEEDOR_IA_ETIQUETA, type ProveedorIa } from "@/lib/proveedores-ia";
 import { accionAplicar, accionCancelar, accionConfirmarMapeo, accionDecidirTodas, accionReanalizar } from "../acciones";
 import { FormularioMapeo } from "./mapeo";
 import { FilaRevision } from "./fila";
@@ -33,7 +34,7 @@ export default async function PaginaImportacion({ params }: { params: Promise<{ 
   const necesitaMapeo = imp.estado === "en_revision" && imp.resumen == null && imp.mapeo != null;
   const pendientes = filas.filter((f) => f.estado === "pendiente");
   const sinDecision = pendientes.filter((f) => !f.decision).length;
-  const ia = imp.extraccionIa as { tipo_documento?: string; resumen?: string; advertencias?: string[] } | null;
+  const ia = imp.extraccionIa as { tipo_documento?: string; resumen?: string; advertencias?: string[]; proveedor?: ProveedorIa; respaldo?: boolean } | null;
   const conteo = (Object.keys(ACCION_FILA_ETIQUETA) as AccionFila[])
     .map((a) => ({ accion: a, n: pendientes.filter((f) => f.accionPropuesta === a).length }))
     .filter((c) => c.n > 0);
@@ -75,6 +76,7 @@ export default async function PaginaImportacion({ params }: { params: Promise<{ 
           <p>
             <strong>Lectura con IA:</strong> {ia.tipo_documento} — {ia.resumen}
           </p>
+          {ia.proveedor && <p className="mt-1 text-xs">Proveedor: {PROVEEDOR_IA_ETIQUETA[ia.proveedor]}{ia.respaldo && " (respaldo)"}</p>}
           {ia.advertencias && ia.advertencias.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-xs">
               {ia.advertencias.map((a) => (
@@ -159,7 +161,8 @@ export default async function PaginaImportacion({ params }: { params: Promise<{ 
 
             <div className="space-y-3">
               {filas.map((f) => (
-                <FilaRevision key={f.id} fila={f} destino={imp.destino} importacionId={imp.id} editable={imp.estado === "en_revision" && f.estado === "pendiente"} />
+                <FilaRevision key={f.id} fila={f} valores={datosParaRevision(f.datosOriginales, imp.mapeo).datos}
+                  destino={imp.destino} importacionId={imp.id} editable={imp.estado === "en_revision" && f.estado === "pendiente"} />
               ))}
             </div>
 
@@ -180,8 +183,8 @@ export default async function PaginaImportacion({ params }: { params: Promise<{ 
             {imp.estado === "aplicada" && (
               <Aviso tipo="exito">
                 Importación aplicada. Revisa el resultado en{" "}
-                <Link href={imp.destino === "alumnos" ? "/alumnos" : "/pagos"} className="enlace">
-                  {imp.destino === "alumnos" ? "Alumnos" : "Pagos"}
+                <Link href={imp.destino === "alumnos" ? "/alumnos" : imp.destino === "pagos" ? "/pagos" : "/flota#conductores"} className="enlace">
+                  {DESTINO_IMPORTACION_ETIQUETA[imp.destino]}
                 </Link>
                 .
               </Aviso>

@@ -13,11 +13,14 @@ const ETIQUETA_PARAMETRO: Record<string, string> = {
 export function FormularioRegla({
   accion,
   regla,
+  kilometraje,
 }: {
   accion: AccionFormulario;
   regla: { activa: boolean; umbrales: { dias: number; nivel: NivelAlerta }[]; parametros: Record<string, number | string | boolean> };
+  kilometraje: boolean;
 }) {
-  const filas = [...regla.umbrales, ...Array.from({ length: Math.max(0, 4 - regla.umbrales.length) }, () => null)];
+  const parametros = Object.entries(regla.parametros).filter(([k]) => k !== "tipo");
+  const filas = [...regla.umbrales, ...Array.from({ length: Math.max(0, 6 - regla.umbrales.length) }, () => null)];
   const usaUmbrales = regla.umbrales.length > 0 || !("nivel" in regla.parametros);
   return (
     <Formulario accion={accion}>
@@ -30,10 +33,10 @@ export function FormularioRegla({
               <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
                 <span>Avisar</span>
                 <input name={`dias_${i}`} type="number" min={0} defaultValue={u ? Math.abs(u.dias) : ""} className="campo w-20" placeholder="—" />
-                <span>días</span>
+                <span>{kilometraje ? "km" : "días"}</span>
                 <select name={`sentido_${i}`} defaultValue={u && u.dias < 0 ? "despues" : "antes"} className="campo w-auto">
-                  <option value="antes">antes (o el mismo día si es 0)</option>
-                  <option value="despues">después (atraso)</option>
+                  <option value="antes">{kilometraje ? "antes del kilometraje objetivo" : "antes (o el mismo día si es 0)"}</option>
+                  <option value="despues">{kilometraje ? "después del kilometraje objetivo" : "después (atraso)"}</option>
                 </select>
                 <span>→</span>
                 <select name={`nivel_${i}`} defaultValue={u?.nivel ?? ""} className="campo w-auto">
@@ -50,9 +53,9 @@ export function FormularioRegla({
           <p className="mt-1 text-xs text-slate-500">Se usa el aviso más urgente que corresponda. Deja vacíos los que no necesites.</p>
         </div>
       )}
-      {Object.keys(regla.parametros).length > 0 && (
+      {parametros.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-3">
-          {Object.entries(regla.parametros).map(([k, v]) =>
+          {parametros.map(([k, v]) =>
             k === "nivel" ? (
               <label key={k}>
                 <span className="etiqueta">{ETIQUETA_PARAMETRO[k]}</span>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requerirUsuario } from "@/server/auth/sesion";
 import { buscarTodo } from "@/server/modulos/busqueda";
+import { consultarGestion } from "@/server/modulos/consultas";
 import { BotonEnlace, EncabezadoPagina, EstadoVacio, Insignia, Pesos, Tarjeta } from "@/components/ui/basicos";
 import { formatearFecha } from "@/lib/formato";
 import { formatearRut } from "@/lib/rut";
@@ -10,16 +11,26 @@ export const metadata = { title: "Buscar" };
 export default async function PaginaBuscar({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
   await requerirUsuario();
   const { q = "" } = await searchParams;
-  const r = q.trim().length >= 2 ? await buscarTodo(q) : null;
+  const consulta = q.trim().length >= 2 ? await consultarGestion(q) : null;
+  const r = !consulta && q.trim().length >= 2 ? await buscarTodo(q) : null;
   const total = r ? r.personas.length + r.buses.length + r.pagos.length : 0;
 
   return (
     <>
-      <EncabezadoPagina titulo="Buscar" descripcion="Nombre, RUT, teléfono, N° de operación, monto o bus. Encuentra todo lo relacionado." />
+      <EncabezadoPagina titulo="Buscar" descripcion="Busca por nombre, RUT, teléfono, N° de operación, monto o bus, o haz una pregunta de gestión." />
       <form className="mb-6 flex gap-2">
         <input name="q" defaultValue={q} autoFocus placeholder="Ej: Jorge, 12.345.678-9, 95000, bus 16…" className="campo text-base" />
         <button className="rounded-lg bg-marca-700 px-5 font-semibold text-white">Buscar</button>
       </form>
+      {!q && <div className="mb-5 flex flex-wrap gap-x-4 gap-y-2 text-sm">
+        {["¿Cuánto recaudamos este año?", "¿Quiénes deben dos meses?", "¿Qué servicios tenemos esta semana?"].map((p) => <Link key={p} href={`/buscar?q=${encodeURIComponent(p)}`} className="enlace">{p}</Link>)}
+      </div>}
+      {consulta && <Tarjeta titulo={consulta.titulo} acciones={<Link href={consulta.enlace} className="enlace text-sm">Ver detalle</Link>}>
+        {!consulta.filas.length && <p className="text-sm text-slate-600">Sin resultados para esta consulta.</p>}
+        <ul className="divide-y divide-slate-100">{consulta.filas.slice(0, 20).map((f, i) => <li key={i} className="flex flex-wrap justify-between gap-3 py-2 text-sm">
+          {f.enlace ? <Link href={f.enlace} className="enlace">{f.texto}</Link> : <span>{f.texto}</span>}<span>{f.detalle}</span>
+        </li>)}</ul>
+      </Tarjeta>}
 
       {r && total === 0 && (
         <EstadoVacio

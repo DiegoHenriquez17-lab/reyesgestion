@@ -8,7 +8,7 @@ Una sola base de datos centralizada, alertas en todos los módulos, carga de dat
 
 ---
 
-## Estado actual: Versión 1 (desarrollo local)
+## Estado actual para el piloto
 
 | Módulo | Estado |
 |---|---|
@@ -20,11 +20,15 @@ Una sola base de datos centralizada, alertas en todos los módulos, carga de dat
 | Buscador global (sin tildes, tolera errores de tipeo, RUT, teléfono, monto, N° operación) | ✅ |
 | Motor de alertas configurable (amarilla / naranja / roja) + recordatorios | ✅ |
 | Informes en pantalla, PDF y Excel (recaudación mensual con subtotales por bus, morosidad, etc.) | ✅ |
-| Cierre de mes con fotografía de totales | ✅ |
+| Cierre de mes con totales e informe detallado | ✅ |
 | Auditoría: quién — cuándo — qué cambió — por qué | ✅ |
 | Usuarios, roles y permisos | ✅ |
+| Control de flota, conductores, vencimientos, kilometraje y mantenciones | ✅ |
+| Cotizaciones, viajes y contratos con alertas y generación PDF | ✅ |
+| Lectura con Gemini y respaldo con Qwen en Groq | Ambas APIs verificadas en local con un comprobante ficticio |
+| Hosting de pruebas | Configuración preparada para Render + Supabase |
 
-Próximas versiones (buses, conductores, mantenciones, contratos, conciliación bancaria avanzada): ver [docs/05-roadmap.md](docs/05-roadmap.md).
+Compara el estado de cada requisito en la [revisión para 2027](docs/09-auditoria-requisitos-2027.md) y sigue la [guía de prueba en línea](docs/08-pruebas-en-linea.md) para desplegar el piloto.
 
 ---
 
@@ -87,7 +91,7 @@ pnpm db:demo
 
 ## Tecnología
 
-**Next.js 16** (React 19, TypeScript) · **PostgreSQL 18** · **Drizzle ORM** · **Tailwind CSS 4** · **Zod** · **Claude (Anthropic)** para lectura de documentos · ExcelJS · jsPDF · Argon2.
+**Next.js 16** (React 19, TypeScript) · **PostgreSQL** · **Drizzle ORM** · **Tailwind CSS 4** · **Zod** · **Gemini y Qwen en Groq** para lectura de documentos · ExcelJS · jsPDF · Argon2.
 
 Por qué este stack y cómo está organizado: [docs/02-arquitectura.md](docs/02-arquitectura.md).
 
@@ -100,3 +104,5 @@ Por qué este stack y cómo está organizado: [docs/02-arquitectura.md](docs/02-
 5. [Hoja de ruta (versiones 1 a 4)](docs/05-roadmap.md)
 6. [IA y carga de datos](docs/06-ia-y-carga-de-datos.md)
 7. [Base de datos oficial (Supabase)](docs/07-base-oficial.md)
+8. [Prueba en línea con Render y Supabase](docs/08-pruebas-en-linea.md)
+9. [Revisión de requisitos 2027](docs/09-auditoria-requisitos-2027.md)

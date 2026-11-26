@@ -50,7 +50,7 @@ export const importaciones = pgTable("importaciones", {
   /** Mapeo columna del archivo → campo del sistema (propuesto y luego confirmado). */
   mapeo: jsonb().$type<Record<string, string | null>>(),
   /** Opciones elegidas por el usuario (ej: { verificado: true } para cartolas bancarias). */
-  opciones: jsonb().$type<{ verificado?: boolean; hoja?: string; filaEncabezado?: number }>(),
+  opciones: jsonb().$type<{ verificado?: boolean; hoja?: string; filaEncabezado?: number; revisionConfianza?: boolean }>(),
   /** Respuesta estructurada de la IA (cuando aplica), guardada tal cual para trazabilidad. */
   extraccionIa: jsonb(),
   resumen: jsonb().$type<Record<string, number>>(),

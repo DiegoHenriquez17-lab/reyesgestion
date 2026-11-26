@@ -9,11 +9,12 @@ import { ErrorNegocio } from "@/server/errores";
 import { actualizarAlumno, crearAlumno, vincularResponsable } from "@/server/modulos/alumnos";
 import { actualizarPersona, obtenerOCrearPersona } from "@/server/modulos/personas";
 import { registrarPago } from "@/server/modulos/pagos";
-import { proponerMapeo } from "@/lib/importacion-campos";
+import { CAMPOS_IMPORTACION, proponerMapeo } from "@/lib/importacion-campos";
 import { normalizarTexto } from "@/lib/texto";
 import type { DecisionFila, DestinoImportacion } from "@/lib/constantes";
 import type { DatosPersona } from "@/lib/validaciones";
 import { analizarFilaAlumno, analizarFilaPago, aplicarMapeo, type Confianzas } from "./analizar";
+import { analizarConductor, aplicarConductor } from "./conductores";
 import { extraerConIa } from "./ia";
 import { leerCsv, leerExcel, tablaDeWord, textoDeWord } from "./lectores";
 
@@ -30,6 +31,9 @@ export async function iniciarImportacion(
 ) {
   const tipoFuente = tipoFuenteDeArchivo(archivo.name, archivo.type);
   if (!tipoFuente) throw new ErrorNegocio("Formato no soportado. Usa Excel (.xlsx), CSV, Word (.docx), PDF o una foto (JPG/PNG).");
+  if ((tipoFuente === "imagen" || tipoFuente === "pdf" || (tipoFuente === "word" && opciones.usarIa)) && !iaHabilitada()) {
+    throw new ErrorNegocio("Este archivo requiere lectura con IA. Configura sus claves, o carga los datos desde Excel o manualmente.");
+  }
 
   const { documento, buffer } = await guardarArchivo(archivo, {
     tipo: tipoFuente === "imagen" ? (destino === "pagos" ? "voucher" : "foto") : tipoFuente === "pdf" ? "otro" : "planilla",
@@ -69,7 +73,7 @@ export async function iniciarImportacion(
     // Lectura con IA
     if (!iaHabilitada()) {
       throw new ErrorNegocio(
-        "Este archivo necesita lectura con IA, que aún no está configurada (ANTHROPIC_API_KEY). Mientras tanto puedes cargar la información desde Excel o manualmente.",
+        "Este archivo requiere lectura con IA. Configura sus claves, o carga los datos desde Excel o manualmente.",
       );
     }
     const resultado = await extraerConIa({
@@ -83,8 +87,8 @@ export async function iniciarImportacion(
       const valores: Record<string, unknown> = {};
       const confianzas: Confianzas = {};
       for (const [campo, { valor, confianza }] of Object.entries(r.campos)) {
-        if (valor !== null && valor !== "") valores[campo] = valor;
-        confianzas[campo] = confianza;
+        if (valor !== null && valor !== "" && confianza === "alta") valores[campo] = valor;
+        if (valor !== null && valor !== "") confianzas[campo] = confianza;
       }
       if (r.nota) valores.__nota = r.nota;
       return { ...valores, __confianzas: confianzas };
@@ -105,6 +109,7 @@ export async function iniciarImportacion(
       entidad: "importacion",
       entidadId: imp.id,
       resumen: `${archivo.name}: ${resultado.tipo_documento} — ${filas.length} registro(s) detectados`,
+      despues: { proveedor: resultado.proveedor, modelo: resultado.modelo, respaldo: resultado.respaldo },
     });
     return { id: imp.id, requiereMapeo: false };
   } catch (e) {
@@ -133,12 +138,14 @@ export async function confirmarMapeo(ctx: Contexto, id: number, mapeo: Record<st
   const imp = await obtenerImportacionBase(id);
   if (imp.estado !== "en_revision") throw new ErrorNegocio("La importación ya no está en revisión.");
   const usados = Object.values(mapeo).filter(Boolean);
+  if (usados.some((campo) => !CAMPOS_IMPORTACION[imp.destino].some((c) => c.clave === campo))) throw new ErrorNegocio("El mapeo contiene un campo inválido.");
   if (imp.destino === "alumnos" && !usados.includes("alumno_nombre_completo") && !usados.includes("alumno_nombres")) {
     throw new ErrorNegocio("Indica qué columna contiene el nombre del alumno.");
   }
   if (imp.destino === "pagos" && (!usados.includes("monto") || !usados.includes("fecha_pago"))) {
     throw new ErrorNegocio("Indica qué columnas contienen la fecha y el monto del pago.");
   }
+  if (imp.destino === "conductores" && !usados.includes("conductor_nombre")) throw new ErrorNegocio("Indica la columna con el nombre del conductor.");
   await db
     .update(importaciones)
     .set({ mapeo, opciones: { ...(imp.opciones ?? {}), verificado: opciones.verificado ?? imp.opciones?.verificado } })
@@ -148,8 +155,19 @@ export async function confirmarMapeo(ctx: Contexto, id: number, mapeo: Record<st
 }
 
 /** PASO 3 — ANALIZAR: normaliza cada fila, detecta duplicados y cambios, y propone una acción. */
+export function datosParaRevision(original: Record<string, unknown>, mapeo: Record<string, string | null> | null) {
+  const { __confianzas, __nota, __correcciones, ...datos } = original;
+  const correcciones = (__correcciones ?? {}) as Record<string, string>;
+  const confianzas = __confianzas as Confianzas | undefined;
+  const confiables = confianzas ? Object.fromEntries(Object.entries(datos).filter(([campo]) => !confianzas[campo] || confianzas[campo] === "alta")) : datos;
+  return { datos: { ...(mapeo ? aplicarMapeo(confiables, mapeo) : confiables), ...correcciones },
+    confianzas: confianzas ? Object.fromEntries(Object.entries(confianzas).filter(([campo]) => !Object.hasOwn(correcciones, campo))) : undefined,
+    nota: typeof __nota === "string" ? __nota : null };
+}
+
 export async function analizarImportacion(id: number) {
   const imp = await obtenerImportacionBase(id);
+  if (imp.estado !== "en_revision" && imp.estado !== "analizando") throw new ErrorNegocio("La importación ya no está en revisión.");
   const filas = await db
     .select()
     .from(importacionFilas)
@@ -160,16 +178,9 @@ export async function analizarImportacion(id: number) {
   const resumen: Record<string, number> = {};
 
   for (const f of filas) {
-    const { __confianzas, __nota, ...originales } = f.datosOriginales as Record<string, unknown> & {
-      __confianzas?: Confianzas;
-      __nota?: string;
-    };
-    const mapeados = imp.mapeo ? aplicarMapeo(originales, imp.mapeo) : originales;
-    const r =
-      imp.destino === "alumnos"
-        ? await analizarFilaAlumno(mapeados, { rutsVistos, confianzas: __confianzas })
-        : await analizarFilaPago(mapeados, { operacionesVistas, confianzas: __confianzas });
-    if (__nota) r.advertencias.push(`Nota de la lectura: ${__nota}`);
+    const { datos: mapeados, confianzas, nota } = datosParaRevision(f.datosOriginales, imp.mapeo);
+    const r = await analizarFila(imp.destino, mapeados, confianzas, rutsVistos, operacionesVistas);
+    if (nota) r.advertencias.push(`Nota de la lectura: ${nota}`);
     resumen[r.accion] = (resumen[r.accion] ?? 0) + 1;
     await db
       .update(importacionFilas)
@@ -183,23 +194,61 @@ export async function analizarImportacion(id: number) {
         decision: r.decision,
         error: null,
       })
-      .where(eq(importacionFilas.id, f.id));
+      .where(and(eq(importacionFilas.id, f.id), eq(importacionFilas.estado, "pendiente")));
   }
-  await db.update(importaciones).set({ estado: "en_revision", resumen, error: null }).where(eq(importaciones.id, id));
+  await db.update(importaciones).set({ estado: "en_revision", resumen, error: null,
+    ...(imp.extraccionIa ? { opciones: { ...imp.opciones, revisionConfianza: true } } : {}),
+  }).where(and(eq(importaciones.id, id), eq(importaciones.estado, imp.estado)));
+}
+
+function analizarFila(destino: DestinoImportacion, datos: Record<string, unknown>, confianzas?: Confianzas, rutsVistos = new Set<string>(), operacionesVistas = new Set<string>()) {
+  switch (destino) {
+    case "alumnos": return analizarFilaAlumno(datos, { rutsVistos, confianzas });
+    case "pagos": return analizarFilaPago(datos, { operacionesVistas, confianzas });
+    case "conductores": return analizarConductor(datos, confianzas);
+  }
+}
+
+export async function corregirFila(ctx: Contexto, id: number, filaId: number, entrada: Record<string, string>) {
+  const imp = await obtenerImportacionBase(id);
+  if (imp.estado !== "en_revision" || !imp.resumen) throw new ErrorNegocio("La importación ya no está en revisión.");
+  const [fila] = await db.select().from(importacionFilas).where(and(eq(importacionFilas.id, filaId), eq(importacionFilas.importacionId, id)));
+  if (fila?.estado !== "pendiente") throw new ErrorNegocio("La fila ya fue procesada.");
+  const correcciones = Object.fromEntries(CAMPOS_IMPORTACION[imp.destino].filter((c) => Object.hasOwn(entrada, c.clave)).map((c) => [c.clave, entrada[c.clave].trim().slice(0, 500)]));
+  const datosOriginales = { ...fila.datosOriginales, __correcciones: correcciones };
+  const anterior = datosParaRevision(fila.datosOriginales, imp.mapeo);
+  const { datos, confianzas } = datosParaRevision(datosOriginales, imp.mapeo);
+  const r = await analizarFila(imp.destino, datos, confianzas);
+  await db.transaction(async (tx) => {
+    const [vigente] = await tx.select().from(importaciones).where(eq(importaciones.id, id)).for("update");
+    if (vigente?.estado !== "en_revision" || JSON.stringify(vigente.mapeo) !== JSON.stringify(imp.mapeo)) throw new ErrorNegocio("La importación cambió. Vuelve a abrir la revisión.");
+    const [actual] = await tx.select().from(importacionFilas).where(eq(importacionFilas.id, filaId)).for("update");
+    if (actual?.estado !== "pendiente" || JSON.stringify(actual.datosOriginales) !== JSON.stringify(fila.datosOriginales)) {
+      throw new ErrorNegocio("La fila cambió. Vuelve a abrir la revisión.");
+    }
+    await tx.update(importacionFilas).set({ datosOriginales, datos: r.datos, accionPropuesta: r.accion, registroExistenteId: r.registroExistenteId,
+      registroExistente: r.registroExistente, diferencias: r.diferencias, advertencias: r.advertencias, decision: r.decision === "omitir" ? "omitir" : null, error: null })
+      .where(eq(importacionFilas.id, filaId));
+    await auditar(tx, ctx, { accion: "corregir_fila", entidad: "importacion", entidadId: id, resumen: `Corrección en fila ${fila.numeroFila}`, antes: anterior.datos, despues: datos });
+  });
 }
 
 export async function decidirFila(id: number, filaId: number, decision: DecisionFila | null, conciliar?: boolean) {
-  const [f] = await db
-    .select()
-    .from(importacionFilas)
-    .where(and(eq(importacionFilas.id, filaId), eq(importacionFilas.importacionId, id)));
-  if (!f || f.estado !== "pendiente") throw new ErrorNegocio("La fila ya fue procesada.");
-  const datos = conciliar === undefined ? f.datos : { ...f.datos, conciliar };
-  await db.update(importacionFilas).set({ decision, datos }).where(eq(importacionFilas.id, filaId));
+  await db.transaction(async (tx) => {
+    const [imp] = await tx.select().from(importaciones).where(eq(importaciones.id, id)).for("update");
+    if (imp?.estado !== "en_revision") throw new ErrorNegocio("La importación ya no está en revisión.");
+    const [f] = await tx.select().from(importacionFilas).where(and(eq(importacionFilas.id, filaId), eq(importacionFilas.importacionId, id))).for("update");
+    if (!f || f.estado !== "pendiente") throw new ErrorNegocio("La fila ya fue procesada.");
+    const datos = conciliar === undefined ? f.datos : { ...f.datos, conciliar };
+    await tx.update(importacionFilas).set({ decision, datos }).where(eq(importacionFilas.id, filaId));
+  });
 }
 
 /** Aplica la misma decisión a todas las filas pendientes con cierta acción propuesta. */
 export async function decidirPorAccion(id: number, accion: string, decision: DecisionFila) {
+  if (!((accion === "crear" && decision === "crear") || (accion === "actualizar" && decision === "actualizar") || (accion === "posible_duplicado" && decision === "mantener"))) {
+    throw new ErrorNegocio("La decisión en bloque no es válida.");
+  }
   await db
     .update(importacionFilas)
     .set({ decision })
@@ -207,7 +256,7 @@ export async function decidirPorAccion(id: number, accion: string, decision: Dec
       and(
         eq(importacionFilas.importacionId, id),
         eq(importacionFilas.estado, "pendiente"),
-        eq(importacionFilas.accionPropuesta, accion as never),
+        eq(importacionFilas.accionPropuesta, accion as "crear" | "actualizar" | "posible_duplicado"),
       ),
     );
 }
@@ -220,6 +269,7 @@ export async function aplicarImportacion(ctxUi: Contexto, id: number) {
   const ctx: Contexto = { ...ctxUi, origen: "importacion" };
   const imp = await obtenerImportacionBase(id);
   if (imp.estado !== "en_revision") throw new ErrorNegocio("La importación no está en revisión.");
+  if (imp.extraccionIa && !imp.opciones?.revisionConfianza) throw new ErrorNegocio("Vuelve a analizar esta importación para revisar la confianza de los datos antes de guardar.");
   const filas = await db
     .select()
     .from(importacionFilas)
@@ -228,47 +278,45 @@ export async function aplicarImportacion(ctxUi: Contexto, id: number) {
 
   const conteo = { aplicadas: 0, omitidas: 0, errores: 0, sinDecision: 0 };
   for (const f of filas) {
-    if (!f.decision) {
-      conteo.sinDecision++;
-      continue;
-    }
-    if (f.decision === "omitir" || f.decision === "mantener") {
-      await db.update(importacionFilas).set({ estado: "omitida" }).where(eq(importacionFilas.id, f.id));
-      conteo.omitidas++;
-      continue;
-    }
     try {
-      const resultadoId = await db.transaction(async (tx) => {
-        if (imp.destino === "alumnos") return aplicarFilaAlumno(ctx, tx, f);
-        return aplicarFilaPago(ctx, tx, f, imp);
+      const resultado = await db.transaction(async (tx) => {
+        const [vigente] = await tx.select().from(importaciones).where(eq(importaciones.id, id)).for("update");
+        if (vigente?.estado !== "en_revision" || !vigente.resumen) return null;
+        const [actual] = await tx.select().from(importacionFilas).where(eq(importacionFilas.id, f.id)).for("update");
+        if (actual?.estado !== "pendiente") return null;
+        if (!actual.decision) return "sinDecision" as const;
+        if (actual.decision === "omitir" || actual.decision === "mantener") {
+          await tx.update(importacionFilas).set({ estado: "omitida", error: null }).where(eq(importacionFilas.id, f.id));
+          return "omitidas" as const;
+        }
+        let resultadoId: number;
+        switch (vigente.destino) {
+          case "alumnos": resultadoId = await aplicarFilaAlumno(ctx, tx, actual); break;
+          case "pagos": resultadoId = await aplicarFilaPago(ctx, tx, actual, vigente); break;
+          case "conductores": resultadoId = await aplicarConductor(ctx, tx, actual.datos, actual.decision, `Importación #${id}, fila ${actual.numeroFila}`); break;
+        }
+        await tx.update(importacionFilas).set({ estado: "aplicada", resultadoId, error: null }).where(eq(importacionFilas.id, f.id));
+        return "aplicadas" as const;
       });
-      await db
-        .update(importacionFilas)
-        .set({ estado: "aplicada", resultadoId, error: null })
-        .where(eq(importacionFilas.id, f.id));
-      conteo.aplicadas++;
+      if (resultado) conteo[resultado]++;
     } catch (e) {
       await db
         .update(importacionFilas)
         .set({ error: e instanceof Error ? e.message : String(e) })
-        .where(eq(importacionFilas.id, f.id));
+        .where(and(eq(importacionFilas.id, f.id), eq(importacionFilas.estado, "pendiente")));
       conteo.errores++;
     }
   }
-  const terminado = conteo.sinDecision === 0 && conteo.errores === 0;
-  await db
-    .update(importaciones)
-    .set({
-      estado: terminado ? "aplicada" : "en_revision",
-      aplicadoPor: ctx.usuarioId,
-      aplicadaEn: terminado ? new Date() : null,
-    })
-    .where(eq(importaciones.id, id));
-  await auditar(db, ctx, {
-    accion: "aplicar_importacion",
-    entidad: "importacion",
-    entidadId: id,
-    resumen: `Importación #${id}: ${conteo.aplicadas} aplicadas, ${conteo.omitidas} omitidas, ${conteo.errores} con error, ${conteo.sinDecision} sin decisión`,
+  await db.transaction(async (tx) => {
+    const [vigente] = await tx.select().from(importaciones).where(eq(importaciones.id, id)).for("update");
+    if (vigente?.estado !== "en_revision" || !vigente.resumen) return;
+    const pendientes = await tx.select({ id: importacionFilas.id }).from(importacionFilas)
+      .where(and(eq(importacionFilas.importacionId, id), eq(importacionFilas.estado, "pendiente"))).limit(1);
+    const terminado = pendientes.length === 0;
+    await tx.update(importaciones).set({ estado: terminado ? "aplicada" : "en_revision", aplicadoPor: ctx.usuarioId,
+      aplicadaEn: terminado ? new Date() : null }).where(eq(importaciones.id, id));
+    await auditar(tx, ctx, { accion: "aplicar_importacion", entidad: "importacion", entidadId: id,
+      resumen: `Importación #${id}: ${conteo.aplicadas} aplicadas, ${conteo.omitidas} omitidas, ${conteo.errores} con error, ${conteo.sinDecision} sin decisión` });
   });
   return conteo;
 }
@@ -345,6 +393,7 @@ async function aplicarFilaAlumno(ctx: Contexto, tx: Tx, f: Fila): Promise<number
     personaActual.id,
     {
       rut: elegir(personaActual.rut, d.persona.rut),
+      telefono: elegir(personaActual.telefono, d.persona.telefono),
       direccion: elegir(personaActual.direccion, d.persona.direccion),
       comuna: elegir(personaActual.comuna, d.persona.comuna),
     },
@@ -361,6 +410,7 @@ async function aplicarFilaAlumno(ctx: Contexto, tx: Tx, f: Fila): Promise<number
       servicioId: elegir(actual.servicioId, datosAlumno.servicioId as number | null) ?? "",
       tarifaMensual: elegir(actual.tarifaMensual, d.alumno.tarifaMensual as number | null),
       diaVencimiento: elegir(actual.diaVencimiento, datosAlumno.diaVencimiento as number | null) ?? "",
+      observaciones: elegir(actual.observaciones, datosAlumno.observaciones as string | null),
     },
     `Importación #${f.importacionId}, fila ${f.numeroFila} (${f.decision === "fusionar" ? "fusión" : "actualización"})`,
     tx,
@@ -405,8 +455,11 @@ async function aplicarFilaPago(ctx: Contexto, tx: Tx, f: Fila, imp: typeof impor
 }
 
 export async function cancelarImportacion(ctx: Contexto, id: number) {
-  await db.update(importaciones).set({ estado: "cancelada" }).where(eq(importaciones.id, id));
-  await auditar(db, ctx, { accion: "cancelar_importacion", entidad: "importacion", entidadId: id, resumen: `Importación #${id} cancelada` });
+  await db.transaction(async (tx) => {
+    const [actualizada] = await tx.update(importaciones).set({ estado: "cancelada" }).where(and(eq(importaciones.id, id), eq(importaciones.estado, "en_revision"))).returning();
+    if (!actualizada) throw new ErrorNegocio("La importación ya no está en revisión.");
+    await auditar(tx, ctx, { accion: "cancelar_importacion", entidad: "importacion", entidadId: id, resumen: `Importación #${id} cancelada` });
+  });
 }
 
 async function obtenerImportacionBase(id: number) {

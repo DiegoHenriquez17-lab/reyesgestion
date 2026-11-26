@@ -2,7 +2,7 @@ import "server-only";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db, type DbOTx } from "@/server/db";
 import { alumnos, buses, mensualidades, pagoAplicaciones, personas, servicios } from "@/server/db/schema";
-import { auditar, exigirMotivoSiCerrado, type Contexto } from "@/server/auditoria";
+import { auditar, bloquearCobranza, exigirMotivoSiCerrado, type Contexto } from "@/server/auditoria";
 import { leerConfig } from "@/server/configuracion";
 import { ErrorNegocio } from "@/server/errores";
 import { fechaVencimiento } from "@/lib/fechas";
@@ -15,6 +15,7 @@ import type { EstadoMensualidad } from "@/lib/constantes";
  */
 export async function generarMensualidades(ctx: Contexto, periodo: string, alumnoIds?: number[]) {
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     await exigirMotivoSiCerrado(tx, [periodo], null);
     const diaGeneral = await leerConfig("cobranza.dia_vencimiento", tx);
     const candidatos = await tx
@@ -95,6 +96,7 @@ export async function cambiarEstadoMensualidad(
 ) {
   if (!motivo?.trim()) throw new ErrorNegocio("Debes indicar el motivo del cambio.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const { m, ...p } = await cargarConNombre(tx, id);
     const cerrado = await exigirMotivoSiCerrado(tx, [m.periodo], motivo);
     if (estado === "anulada" && m.montoPagado > 0) {
@@ -119,6 +121,7 @@ export async function cambiarMontoMensualidad(ctx: Contexto, id: number, monto: 
   if (!Number.isInteger(monto) || monto < 0) throw new ErrorNegocio("Monto inválido.");
   if (!motivo?.trim()) throw new ErrorNegocio("Debes indicar el motivo del cambio de monto.");
   return db.transaction(async (tx) => {
+    await bloquearCobranza(tx);
     const { m, ...p } = await cargarConNombre(tx, id);
     const cerrado = await exigirMotivoSiCerrado(tx, [m.periodo], motivo);
     await tx.update(mensualidades).set({ monto }).where(eq(mensualidades.id, id));

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requerirUsuario } from "@/server/auth/sesion";
 import { listarImportaciones } from "@/server/importacion";
-import { iaHabilitada } from "@/server/entorno";
+import { proveedoresConfigurados } from "@/server/entorno";
+import { PROVEEDOR_IA_ETIQUETA } from "@/lib/proveedores-ia";
 import { EncabezadoPagina, Insignia, Tarjeta } from "@/components/ui/basicos";
-import { DESTINO_IMPORTACION_ETIQUETA, ESTADO_IMPORTACION_ETIQUETA, type DestinoImportacion } from "@/lib/constantes";
+import { DESTINO_IMPORTACION_ETIQUETA, ESTADO_IMPORTACION_ETIQUETA, DESTINOS_IMPORTACION } from "@/lib/constantes";
 import { formatearFechaHora } from "@/lib/formato";
 import { FormularioSubida } from "./subida";
 
@@ -12,7 +13,8 @@ export const metadata = { title: "Importar datos" };
 export default async function PaginaImportar({ searchParams }: { searchParams: Promise<{ destino?: string; modo?: string }> }) {
   await requerirUsuario(["admin", "operador"]);
   const [sp, lista] = await Promise.all([searchParams, listarImportaciones()]);
-  const destino = (sp.destino === "pagos" ? "pagos" : sp.destino === "alumnos" ? "alumnos" : "alumnos") as DestinoImportacion;
+  const destino = DESTINOS_IMPORTACION.find((d) => d === sp.destino) ?? "alumnos";
+  const proveedores = proveedoresConfigurados().map((proveedor) => PROVEEDOR_IA_ETIQUETA[proveedor]);
 
   return (
     <>
@@ -30,7 +32,8 @@ export default async function PaginaImportar({ searchParams }: { searchParams: P
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="lg:col-span-3">
-          <FormularioSubida destinoInicial={destino} modoFoto={sp.modo === "foto"} iaDisponible={iaHabilitada()} />
+          {proveedores.length > 0 && <p className="mb-3 text-sm text-slate-600">IA configurada con {proveedores.join(" y ")}. {proveedores.length === 2 ? "Cambio automático disponible." : "Configura el segundo proveedor para activar el cambio automático."}</p>}
+          <FormularioSubida destinoInicial={destino} modoFoto={sp.modo === "foto"} iaDisponible={proveedores.length > 0} />
         </div>
         <Tarjeta titulo="Importaciones recientes" className="lg:col-span-2">
           {lista.length === 0 ? (

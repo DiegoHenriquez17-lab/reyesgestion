@@ -30,7 +30,7 @@ export default async function PaginaReglas() {
             </summary>
             <p className="mt-2 text-sm text-slate-600">{r.descripcion}</p>
             <div className="mt-4 border-t border-slate-100 pt-4">
-              <FormularioRegla accion={accionGuardarRegla.bind(null, r.codigo)} regla={{ activa: r.activa, umbrales: r.umbrales, parametros: r.parametros }} />
+              <FormularioRegla accion={accionGuardarRegla.bind(null, r.codigo)} regla={{ activa: r.activa, umbrales: r.umbrales, parametros: r.parametros }} kilometraje={r.codigo === "mantenciones.kilometraje"} />
             </div>
           </details>
         ))}

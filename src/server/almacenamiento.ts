@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { db, type DbOTx } from "@/server/db";
 import { documentos } from "@/server/db/schema";
@@ -8,24 +8,25 @@ import { entorno } from "@/server/entorno";
 import { ErrorNegocio } from "@/server/errores";
 import type { TipoDocumento } from "@/lib/constantes";
 
-/**
- * Almacenamiento de archivos en disco local (STORAGE_DIR).
- * Más adelante se puede reemplazar por almacenamiento en la nube (S3/R2)
- * cambiando solo este módulo.
- */
 // Rutas dinámicas en tiempo de ejecución (carpeta de archivos subidos): se excluyen del análisis de empaquetado
 const raiz = () => path.resolve(/*turbopackIgnore: true*/ process.cwd(), entorno.STORAGE_DIR);
+const PREFIJO_REMOTO = "supabase:";
 
-export const MIME_PERMITIDOS: Record<string, string[]> = {
-  imagen: ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"],
-  pdf: ["application/pdf"],
-  excel: [
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    "application/vnd.ms-excel",
-    "text/csv",
-  ],
-  word: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-};
+async function solicitarObjeto(ruta: string, operacion: "GET" | "POST" | "DELETE", cuerpo?: Uint8Array<ArrayBuffer>) {
+  const clave = entorno.SUPABASE_STORAGE_KEY;
+  if (!entorno.SUPABASE_URL || !clave) throw new ErrorNegocio("El almacenamiento de documentos no está configurado.");
+  const segmento = ruta.split("/").map(encodeURIComponent).join("/");
+  const destino = operacion === "GET" ? "object/authenticated" : "object";
+  const url = new URL(`/storage/v1/${destino}/${entorno.SUPABASE_STORAGE_BUCKET}/${segmento}`, entorno.SUPABASE_URL);
+  const encabezados = new Headers({ apikey: clave });
+  if (!clave.startsWith("sb_secret_")) encabezados.set("Authorization", `Bearer ${clave}`);
+  if (cuerpo) encabezados.set("Content-Type", "application/octet-stream");
+  const respuesta = await fetch(url, {
+    method: operacion, headers: encabezados, body: cuerpo, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(30_000),
+  });
+  if (!respuesta.ok) throw new ErrorNegocio(`Supabase Storage no pudo completar la operación (HTTP ${respuesta.status}).`);
+  return respuesta;
+}
 
 export function tipoFuenteDeArchivo(nombre: string, mime: string): "excel" | "csv" | "word" | "pdf" | "imagen" | null {
   const ext = path.extname(nombre).toLowerCase();
@@ -51,15 +52,20 @@ export async function guardarArchivo(
   const hoy = new Date();
   const carpeta = path.join(/*turbopackIgnore: true*/ String(hoy.getFullYear()), String(hoy.getMonth() + 1).padStart(2, "0"));
   const ext = path.extname(archivo.name).toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin";
-  const relativa = path.join(/*turbopackIgnore: true*/ carpeta, `${randomUUID()}${ext}`);
-  await mkdir(path.join(/*turbopackIgnore: true*/ raiz(), carpeta), { recursive: true });
-  await writeFile(path.join(/*turbopackIgnore: true*/ raiz(), relativa), buffer);
+  const relativa = path.join(/*turbopackIgnore: true*/ carpeta, `${randomUUID()}${ext}`).replaceAll("\\", "/");
+  const remoto = entorno.STORAGE_DRIVER === "supabase";
+  const completa = path.join(/*turbopackIgnore: true*/ raiz(), relativa);
+  if (remoto) {
+    await solicitarObjeto(relativa, "POST", new Uint8Array(buffer));
+  } else {
+    await mkdir(path.join(/*turbopackIgnore: true*/ raiz(), carpeta), { recursive: true });
+    await writeFile(completa, buffer);
+  }
 
-  const [doc] = await tx
-    .insert(documentos)
-    .values({
+  try {
+    const [doc] = await tx.insert(documentos).values({
       nombreOriginal: archivo.name.slice(0, 250),
-      ruta: relativa.replaceAll("\\", "/"),
+      ruta: remoto ? `${PREFIJO_REMOTO}${relativa}` : relativa,
       mime: archivo.type || "application/octet-stream",
       tamano: archivo.size,
       sha256,
@@ -67,12 +73,26 @@ export async function guardarArchivo(
       entidadTipo: opciones.entidadTipo,
       entidadId: opciones.entidadId,
       subidoPor: opciones.usuarioId,
-    })
-    .returning();
-  return { documento: doc, buffer };
+    }).returning();
+    return { documento: doc, buffer };
+  } catch (error) {
+    try {
+      if (remoto) await solicitarObjeto(relativa, "DELETE");
+      else await unlink(completa);
+    } catch {
+      console.warn("No se pudo retirar un archivo que quedó sin registro.");
+    }
+    throw error;
+  }
 }
 
 export async function leerArchivo(ruta: string): Promise<Buffer> {
+  if (ruta.startsWith(PREFIJO_REMOTO)) {
+    const relativa = ruta.slice(PREFIJO_REMOTO.length);
+    if (!/^\d{4}\/\d{2}\/[a-f0-9-]{36}\.[a-z0-9.]+$/.test(relativa)) throw new ErrorNegocio("Ruta de archivo inválida.");
+    const respuesta = await solicitarObjeto(relativa, "GET");
+    return Buffer.from(await respuesta.arrayBuffer());
+  }
   const completa = path.resolve(/*turbopackIgnore: true*/ raiz(), ruta);
   // Protección: nunca leer fuera de la carpeta de almacenamiento
   if (!completa.startsWith(raiz() + path.sep)) throw new ErrorNegocio("Ruta de archivo inválida.");

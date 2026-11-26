@@ -49,6 +49,7 @@ export default async function FichaAlumno({ params, searchParams }: { params: Pr
               <BotonEnlace href={`/pagos/nuevo?alumno=${alumno.id}`} variante="exito">
                 Registrar pago
               </BotonEnlace>
+              <BotonEnlace href={`/devoluciones?alumno=${alumno.id}`} variante="secundario">Devoluciones</BotonEnlace>
             </>
           )
         }

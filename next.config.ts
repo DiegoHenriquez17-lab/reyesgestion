@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
     },
   },
   // Paquetes de servidor que no deben empaquetarse (binarios nativos / archivos propios).
-  serverExternalPackages: ["@node-rs/argon2", "sharp", "exceljs", "mammoth", "jspdf", "jspdf-autotable"],
+  serverExternalPackages: ["@node-rs/argon2", "sharp", "exceljs", "mammoth", "jspdf", "jspdf-autotable", "pdf-to-img"],
   experimental: {
     serverActions: {
       // Permite subir fotos, PDF y Excel mediante Server Actions.

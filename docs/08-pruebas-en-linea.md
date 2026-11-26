@@ -1,0 +1,34 @@
+# Prueba en línea de Reyes Gestión
+
+Usa un servicio web gratuito de Render para la aplicación y un proyecto gratuito de Supabase exclusivo de pruebas para PostgreSQL y un bucket privado. El sistema usa el archivo `render.yaml` del repositorio y aplica las migraciones al arrancar. Los adjuntos que se suban a la prueba se conservan en Supabase Storage cuando Render reinicia. [Render gratuito](https://render.com/docs/free) · [Blueprint de Render](https://render.com/docs/blueprint-spec) · [Planes de Supabase](https://supabase.com/pricing)
+
+Render suspende el servidor tras 15 minutos sin actividad. La primera carga después de una suspensión puede demorar cerca de un minuto. Supabase Free incluye 500 MB de base y 1 GB de archivos, y puede pausar el proyecto tras una semana sin actividad. El Blueprint usa Gemini y Qwen en Groq. Para el piloto, mantén ambas cuentas en el plan gratuito y usa datos ficticios. [Render gratuito](https://render.com/docs/free) · [Planes de Supabase](https://supabase.com/pricing) · [Precios de Gemini](https://aistudio.google.com/docs/pricing) · [Límites de Groq](https://console.groq.com/docs/rate-limits)
+
+## Preparar Supabase y Render
+
+1. Crea un proyecto Supabase de pruebas en São Paulo, si está disponible en tu cuenta. En **Connect**, copia la URI de **Session pooler** como `DATABASE_URL` y activa TLS con `sslmode=require`. Guarda la contraseña exclusivamente en el entorno que corresponda. [Conexiones a PostgreSQL](https://supabase.com/docs/guides/database/connecting-to-postgres) · [Regiones de Supabase](https://supabase.com/docs/guides/platform/regions)
+2. En **Storage**, crea el bucket privado `reyes-documentos`. En las claves de API del proyecto, crea una clave secreta y guárdala en `SUPABASE_STORAGE_KEY`. Usa la URL HTTPS del proyecto para `SUPABASE_URL`. La clave es de servidor y el navegador solo recibe adjuntos después de iniciar sesión. [Buckets privados](https://supabase.com/docs/guides/storage/buckets/fundamentals) · [Claves de Supabase](https://supabase.com/docs/guides/api/api-keys)
+3. Sube el código revisado a una rama del repositorio privado. En Render abre **New → Blueprint** y conecta esa rama. Completa `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_STORAGE_KEY`, `GEMINI_API_KEY`, `GROQ_API_KEY`, `SEED_ADMIN_EMAIL` y `SEED_ADMIN_PASSWORD` en el formulario de Render. El perfil queda identificado como **PRUEBAS**. El primer administrador se crea desde el arranque con esas variables y se protege el registro inicial web. [Cómo conectar un Blueprint](https://render.com/docs/infrastructure-as-code#setup)
+4. Abre la URL HTTPS que Render asigna al servicio. Inicia sesión y prueba una planilla ficticia, un pago y la descarga de un informe. Sube un adjunto de prueba y confirma que todavía abre después de reiniciar el servicio.
+5. Analiza un PDF o foto ficticios y confirma que **Importar datos** muestra Gemini y Qwen (Groq). Para probar el respaldo, configura temporalmente un `GEMINI_MODEL` inexistente en **Environment** y analiza una foto o un PDF de hasta dos páginas. La vista previa debe mostrar Qwen (Groq) como respaldo. Retira esa variable para volver al modelo predeterminado. Google pide mantener los datos personales fuera de su modalidad gratuita. [Condiciones de Gemini](https://aistudio.google.com/docs/terms)
+
+## Datos ficticios opcionales
+
+Puedes preparar una cuenta y cargar la demostración desde PowerShell, usando la conexión del proyecto Supabase de pruebas como `DATABASE_URL`. Con `APP_ENTORNO=desarrollo`, ejecuta `pnpm db:migrar`, `pnpm db:seed` y `pnpm db:demo`. Si vas a usar la demostración, hazlo antes de importar datos propios. Mantén la configuración de pruebas separada de `.env.oficial`.
+
+## Paso a operación con datos reales
+
+- La base oficial ya existe. Antes de migrarla, rota la contraseña de PostgreSQL que quedó visible en una captura, revisa las credenciales de despliegue y genera un respaldo. Las nuevas migraciones deben pasar primero por el proyecto de pruebas.
+- Programa la ejecución diaria de `pnpm oficial:alertas` en el equipo o servidor de operación. Para generar mensualidades de los meses de cobro automáticamente, ejecuta `pnpm exec tsx --env-file=.env.oficial --conditions=react-server scripts/operacion-diaria.ts --mensualidades` todos los días. La generación es idempotente. Render Free no incluye un cron propio. Las alertas del panel también se recalculan cuando alguien entra al sistema.
+- Para respaldar por separado, usa `pnpm oficial:respaldo` para PostgreSQL y `pnpm oficial:respaldo-adjuntos` para archivos, con el entorno de Storage correcto. El respaldo de adjuntos verifica las huellas y deja un manifiesto que relaciona cada copia con la ruta de origen. Guarda ambas copias cifradas fuera del servidor y ensaya la recuperación en una base vacía. Los respaldos de PostgreSQL de Supabase cubren los metadatos de Storage y los objetos se respaldan por separado. [Respaldos de Supabase](https://supabase.com/docs/guides/platform/backups)
+- Si la instalación oficial tiene adjuntos en `storage-oficial`, mueve esas copias al bucket y concilia las referencias `documentos.ruta` antes de retirar el disco original. Los archivos subidos por la aplicación al bucket ya nacen con el identificador remoto.
+- Acuerda qué documentos con datos personales pueden enviarse a cada proveedor de IA antes de activar sus claves en producción. Gestiona facturación y límites en las dos cuentas de API.
+
+Vercel Hobby limita el uso a proyectos personales y no comerciales. Para las pruebas internas de la empresa, usa el servicio web de Render preparado en este repositorio. [Plan Hobby de Vercel](https://vercel.com/docs/plans/hobby)
+
+## Ensayar la restauración en una base vacía
+
+1. Usa una base PostgreSQL nueva y vacía y confirma su conexión antes de restaurar. Instala `pg_trgm` y `unaccent` en el mismo esquema del origen. Usa `public` para el PostgreSQL local y `extensions` para una copia de la base oficial de Supabase. Al restaurar una copia de Supabase en PostgreSQL local, añade `extensions` al `search_path` de la conexión, junto con `public`.
+2. Usa `pg_restore -l archivo.dump` para generar la lista de objetos y excluye la entrada `SCHEMA - public`, porque ese esquema ya existe. Guarda la lista como `restaurar.list` en UTF-8 sin BOM. Ejecuta `pg_restore --exit-on-error --no-owner --no-privileges --use-list=restaurar.list -d URI_DE_PRUEBAS archivo.dump`.
+3. Usa `manifest.json` del respaldo de adjuntos para devolver cada copia a su ruta. Para archivos locales, la ruta es relativa a `STORAGE_DIR`. El prefijo `supabase:` identifica la ruta en el bucket privado de destino. Comprueba que los archivos abran desde la app y que coincidan sus huellas SHA-256.
+4. Inicia sesión con una cuenta de prueba y revisa el buscador, una ficha, un adjunto y el cierre de mes. Registra la fecha y el resultado del ensayo.

@@ -110,11 +110,12 @@ export const MODULO_ETIQUETA: Record<Modulo, string> = {
 export const TIPOS_FUENTE_IMPORTACION = ["excel", "csv", "word", "pdf", "imagen"] as const;
 export type TipoFuenteImportacion = (typeof TIPOS_FUENTE_IMPORTACION)[number];
 
-export const DESTINOS_IMPORTACION = ["alumnos", "pagos"] as const;
+export const DESTINOS_IMPORTACION = ["alumnos", "pagos", "conductores"] as const;
 export type DestinoImportacion = (typeof DESTINOS_IMPORTACION)[number];
 export const DESTINO_IMPORTACION_ETIQUETA: Record<DestinoImportacion, string> = {
   alumnos: "Alumnos y apoderados",
   pagos: "Pagos / comprobantes",
+  conductores: "Conductores",
 };
 
 export const ESTADOS_IMPORTACION = ["analizando", "en_revision", "aplicada", "cancelada", "error"] as const;

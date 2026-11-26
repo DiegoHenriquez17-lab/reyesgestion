@@ -5,7 +5,7 @@ import { parsearMonto } from "./formato";
 import { normalizarRut, rutEsValido } from "./rut";
 
 /** Texto opcional: "" → null, con recorte de espacios. */
-const textoOpcional = z
+export const textoOpcional = z
   .string()
   .trim()
   .max(500)
@@ -13,7 +13,7 @@ const textoOpcional = z
   .nullable()
   .transform((v) => (v ? v : null));
 
-const idOpcional = z
+export const idOpcional = z
   .union([z.coerce.number().int().positive(), z.literal(""), z.null()])
   .optional()
   .transform((v) =>
@@ -31,8 +31,8 @@ const monto = z
     return n;
   });
 
-const fecha = z.string().refine(esFechaIso, "Fecha inválida (use AAAA-MM-DD)");
-const fechaOpcional = z
+export const fecha = z.iso.date("Fecha inválida (usa AAAA-MM-DD)");
+export const fechaOpcional = z
   .string()
   .optional()
   .nullable()

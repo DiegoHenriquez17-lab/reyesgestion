@@ -29,11 +29,20 @@ export default async function FichaPersona({ params }: { params: Promise<{ id: s
             {rel.comoAlumno && <Insignia color="azul">Alumno</Insignia>}
             {rel.comoResponsable.some((r) => r.esApoderado) && <Insignia>Apoderado</Insignia>}
             {rel.comoResponsable.some((r) => r.esPagador) && <Insignia color="verde">Pagador</Insignia>}
+            {rel.conductor && <Insignia>Conductor</Insignia>}
           </span>
         }
       />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {rel.conductor && <Tarjeta titulo="Como conductor"><Link className="enlace" href={`/flota#conductor-${rel.conductor.id}`}>Ver ficha de conductor</Link></Tarjeta>}
+          {(rel.clienteCotizaciones.length > 0 || rel.clienteViajes.length > 0 || rel.clienteContratos.length > 0) && <Tarjeta titulo="Como cliente">
+            <ul className="space-y-2 text-sm">
+              {rel.clienteCotizaciones.map((c) => <li key={`c-${c.id}`}><Link className="enlace" href={`/operaciones#cotizacion-${c.id}`}>Cotización #{c.id} · {formatearFecha(c.fechaServicio)}</Link></li>)}
+              {rel.clienteViajes.map((v) => <li key={`v-${v.id}`}><Link className="enlace" href={`/operaciones#viaje-${v.id}`}>Viaje #{v.id} · {formatearFecha(v.fecha)}</Link></li>)}
+              {rel.clienteContratos.map((c) => <li key={`t-${c.id}`}><Link className="enlace" href={`/operaciones#contrato-${c.id}`}>{c.titulo}</Link></li>)}
+            </ul>
+          </Tarjeta>}
           {rel.comoAlumno && (
             <Tarjeta titulo="Como alumno">
               <Link href={`/alumnos/${rel.comoAlumno.id}`} className="enlace">

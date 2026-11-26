@@ -14,7 +14,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ codi
   const formato = url.searchParams.get("formato") === "xlsx" ? "xlsx" : "pdf";
   const periodo = aPeriodo(url.searchParams.get("periodo")) ?? undefined;
   const anio = Number(url.searchParams.get("anio")) || undefined;
-  const informe = await generarInforme(codigo as CodigoInforme, { periodo, anio });
+  const informe = await generarInforme(codigo as CodigoInforme, { periodo, anio, cierre: url.searchParams.get("cierre") === "1" });
   const nombre = `${informe.titulo.replace(/[^\p{L}\p{N} -]/gu, "").replace(/\s+/g, "_")}.${formato}`;
   const cuerpo = formato === "xlsx" ? await informeAExcel(informe) : informeAPdf(informe);
   return new Response(new Uint8Array(cuerpo), {

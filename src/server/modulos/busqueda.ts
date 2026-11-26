@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/server/db";
-import { alumnoResponsables, alumnos, buses, pagos, personaAlias, personas } from "@/server/db/schema";
+import { alumnoResponsables, alumnos, buses, conductores, pagos, personaAlias, personas } from "@/server/db/schema";
 import { normalizarTexto } from "@/lib/texto";
 import { normalizarRut } from "@/lib/rut";
 import { parsearMonto } from "@/lib/formato";
@@ -40,6 +40,7 @@ export async function buscarTodo(texto: string, limite = 12): Promise<ResultadoB
       apellidos: personas.apellidos,
       rut: personas.rut,
       telefono: personas.telefono,
+      conductor: sql<boolean>`exists (select 1 from ${conductores} c where c.persona_id = ${personas.id})`,
       similitud,
     })
     .from(personas)
@@ -89,6 +90,7 @@ export async function buscarTodo(texto: string, limite = 12): Promise<ResultadoB
       cargos.some((c) => c.esTitular) && "Apoderado titular",
       cargos.some((c) => c.esApoderado && !c.esTitular) && "Apoderado",
       cargos.some((c) => c.esPagador) && "Pagador",
+      p.conductor && "Conductor",
     ].filter(Boolean) as string[];
     return {
       id: p.id,

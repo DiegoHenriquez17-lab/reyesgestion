@@ -19,6 +19,7 @@ export const CAMPOS_IMPORTACION: Record<DestinoImportacion, CampoImportacion[]> 
     { clave: "alumno_nombres", etiqueta: "Nombres del alumno", sinonimos: ["nombres", "nombres alumno"] },
     { clave: "alumno_apellidos", etiqueta: "Apellidos del alumno", sinonimos: ["apellidos", "apellido", "apellidos alumno"] },
     { clave: "alumno_rut", etiqueta: "RUT del alumno", sinonimos: ["rut", "rut alumno", "run", "rut del alumno", "rut estudiante"] },
+    { clave: "alumno_telefono", etiqueta: "Teléfono del alumno", sinonimos: ["telefono alumno", "fono alumno", "celular alumno"] },
     { clave: "direccion", etiqueta: "Domicilio", sinonimos: ["direccion", "domicilio", "dir", "direccion alumno", "lugar de retiro", "retiro"] },
     { clave: "comuna", etiqueta: "Comuna", sinonimos: ["comuna", "ciudad", "sector"] },
     { clave: "establecimiento", etiqueta: "Colegio / establecimiento", sinonimos: ["colegio", "establecimiento", "escuela", "liceo"] },
@@ -65,6 +66,15 @@ export const CAMPOS_IMPORTACION: Record<DestinoImportacion, CampoImportacion[]> 
     { clave: "descripcion", etiqueta: "Descripción / glosa", sinonimos: ["descripcion", "glosa", "detalle", "concepto", "comentario"] },
     { clave: "alumno_nombre", etiqueta: "Alumno (si se indica)", sinonimos: ["alumno", "estudiante", "nombre alumno"] },
     { clave: "periodo", etiqueta: "Mes que paga", sinonimos: ["mes", "periodo", "mes pagado", "mes que paga"] },
+    { clave: "observaciones", etiqueta: "Observaciones", sinonimos: ["observaciones", "obs", "notas"] },
+  ],
+  conductores: [
+    { clave: "conductor_nombre", etiqueta: "Nombre completo", sinonimos: ["nombre", "nombre completo", "conductor", "chofer", "nombre conductor"], obligatorio: true },
+    { clave: "conductor_rut", etiqueta: "RUT del conductor", sinonimos: ["rut", "run", "rut conductor", "rut chofer"] },
+    { clave: "telefono", etiqueta: "Teléfono", sinonimos: ["telefono", "fono", "celular", "contacto"] },
+    { clave: "direccion", etiqueta: "Domicilio", sinonimos: ["direccion", "domicilio", "dir"] },
+    { clave: "clase_licencia", etiqueta: "Clase de licencia", sinonimos: ["clase", "licencia", "clase licencia", "tipo de licencia"] },
+    { clave: "vencimiento_licencia", etiqueta: "Vencimiento de licencia", sinonimos: ["vencimiento", "vencimiento licencia", "fecha vencimiento", "vigencia licencia"] },
     { clave: "observaciones", etiqueta: "Observaciones", sinonimos: ["observaciones", "obs", "notas"] },
   ],
 };

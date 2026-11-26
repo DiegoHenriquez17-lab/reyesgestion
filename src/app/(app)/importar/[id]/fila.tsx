@@ -1,7 +1,9 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { Insignia } from "@/components/ui/basicos";
+import { BotonEnviar, Campo, Formulario } from "@/components/ui/formularios";
+import { CAMPOS_IMPORTACION } from "@/lib/importacion-campos";
 import {
   ACCION_FILA_ETIQUETA,
   DECISION_FILA_ETIQUETA,
@@ -15,7 +17,7 @@ import {
 import { formatearFecha, formatearPeriodo, formatearPesos } from "@/lib/formato";
 import { formatearRut } from "@/lib/rut";
 import { cn } from "@/lib/utils";
-import { accionDecidirFila } from "../acciones";
+import { accionCorregirFila, accionDecidirFila } from "../acciones";
 
 type Fila = {
   id: number;
@@ -62,8 +64,9 @@ function opcionesPara(accion: AccionFila, destino: DestinoImportacion, hayExiste
 const Valor = ({ v }: { v: unknown }) =>
   v === null || v === undefined || v === "" ? <span className="text-amber-700">{NO_IDENTIFICADO}</span> : <>{String(v)}</>;
 
-export function FilaRevision({ fila, destino, importacionId, editable }: { fila: Fila; destino: DestinoImportacion; importacionId: number; editable: boolean }) {
+export function FilaRevision({ fila, valores, destino, importacionId, editable }: { fila: Fila; valores: Record<string, unknown>; destino: DestinoImportacion; importacionId: number; editable: boolean }) {
   const [guardando, iniciar] = useTransition();
+  const [editando, editar] = useState(false);
   const d = fila.datos;
   const decidir = (decision: string, conciliar?: boolean) => iniciar(() => accionDecidirFila(importacionId, fila.id, decision, conciliar));
 
@@ -96,18 +99,19 @@ export function FilaRevision({ fila, destino, importacionId, editable }: { fila:
         )}
       </div>
 
-      <div className="mt-3">{destino === "alumnos" ? <DatosAlumno d={d} /> : <DatosPago d={d} />}</div>
+      <div className="mt-3">{destino === "alumnos" ? <DatosAlumno d={d} /> : destino === "pagos" ? <DatosPago d={d} /> : <DatosConductor d={d} />}</div>
 
       {fila.registroExistente && (
         <div className="mt-3 grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2">
           <div>
             <p className="text-xs font-bold uppercase text-slate-500">Registro actual</p>
-            {destino === "alumnos" ? (
+            {destino !== "pagos" ? (
               <p>
                 {String(fila.registroExistente.nombre ?? "")}
                 {fila.registroExistente.bus ? ` — Bus ${fila.registroExistente.bus}` : ""}
                 {fila.registroExistente.tarifa != null ? ` — ${formatearPesos(Number(fila.registroExistente.tarifa))}` : ""}
                 {fila.registroExistente.apoderado ? ` — Apoderado: ${fila.registroExistente.apoderado}` : ""}
+                {fila.registroExistente.clase ? ` · Licencia ${fila.registroExistente.clase}` : ""}
               </p>
             ) : (
               <p>
@@ -144,8 +148,28 @@ export function FilaRevision({ fila, destino, importacionId, editable }: { fila:
         </ul>
       )}
       {fila.error && <p className="mt-2 text-sm font-semibold text-red-700">Error al guardar: {fila.error}</p>}
+      {editable && <div className="mt-3 border-t border-slate-100 pt-2">
+        <button type="button" className="enlace text-sm" aria-expanded={editando} onClick={() => editar(!editando)}>{editando ? "Cerrar edición" : "Corregir datos de la fila"}</button>
+        {editando && <Formulario accion={accionCorregirFila.bind(null, importacionId, fila.id)} className="mt-2" alExito={() => editar(false)}>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {CAMPOS_IMPORTACION[destino].map(({ clave, etiqueta }) => <Campo key={clave} etiqueta={etiqueta} nombre={clave} defaultValue={String(valores[clave] ?? "")} maxLength={500} />)}
+          </div>
+          <BotonEnviar tamano="sm" variante="secundario">Actualizar revisión</BotonEnviar>
+        </Formulario>}
+      </div>}
     </div>
   );
+}
+
+function DatosConductor({ d }: { d: Record<string, unknown> }) {
+  const persona = d.persona as { nombres: string; apellidos: string; telefono?: string; rut?: string } | undefined;
+  if (!persona) return <p className="text-sm text-red-700">Sin nombre de conductor identificado.</p>;
+  return <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+    <div><dt className="text-xs text-slate-500">Conductor</dt><dd className="font-semibold">{persona.nombres} {persona.apellidos}</dd></div>
+    <div><dt className="text-xs text-slate-500">RUT</dt><dd>{persona.rut ? formatearRut(persona.rut) : "—"}</dd></div>
+    <div><dt className="text-xs text-slate-500">Clase</dt><dd><Valor v={d.claseLicencia} /></dd></div>
+    <div><dt className="text-xs text-slate-500">Vencimiento</dt><dd>{d.fechaVencimiento ? formatearFecha(String(d.fechaVencimiento)) : <Valor v={null} />}</dd></div>
+  </dl>;
 }
 
 function DatosAlumno({ d }: { d: Record<string, unknown> }) {

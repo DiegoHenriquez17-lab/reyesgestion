@@ -11,7 +11,7 @@ export default async function PaginaInforme({
   searchParams,
 }: {
   params: Promise<{ codigo: string }>;
-  searchParams: Promise<{ periodo?: string; anio?: string }>;
+  searchParams: Promise<{ periodo?: string; anio?: string; cierre?: string }>;
 }) {
   await requerirUsuario();
   const { codigo } = await params;
@@ -20,10 +20,11 @@ export default async function PaginaInforme({
   if (!def) notFound();
   const periodo = aPeriodo(sp.periodo) ?? undefined;
   const anio = Number(sp.anio) || undefined;
-  const informe = await generarInforme(codigo as CodigoInforme, { periodo, anio });
+  const informe = await generarInforme(codigo as CodigoInforme, { periodo, anio, cierre: sp.cierre === "1" });
   const query = new URLSearchParams();
   if (sp.periodo) query.set("periodo", sp.periodo);
   if (sp.anio) query.set("anio", sp.anio);
+  if (sp.cierre === "1") query.set("cierre", "1");
 
   return (
     <>

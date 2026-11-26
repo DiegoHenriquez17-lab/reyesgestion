@@ -1,49 +1,27 @@
-# 5. Hoja de ruta
+# Hoja de ruta de Reyes Gestión
 
-## Versión 1 — Cobranza escolar ✅ (construida, en pruebas locales)
+## Versión 1 — Cobranza escolar
 
-Alumnos · apoderados · pagadores · mensualidades · pagos (manual, voucher con IA, cartola Excel) · conciliación asistida · buscador · informes PDF/Excel · alertas configurables · recordatorios · cierre de mes · auditoría · usuarios y permisos · importación Excel/Word/PDF/foto con validación.
+El piloto incluye fichas relacionadas de alumnos, apoderados y pagadores, mensualidades, pagos manuales y por voucher, carga de cartolas, conciliación asistida, devoluciones, buscador, alertas, informes PDF y Excel, auditoría y cierre de mes con informe archivado. Excel, Word, PDF e imágenes pasan por una revisión antes de llegar a las fichas o pagos.
 
-### Pendientes / mejoras sugeridas para cerrar V1
+Para completar el piloto en línea, falta configurar las claves de Gemini y Groq en Render y validar planillas y comprobantes ficticios. El respaldo y la restauración deben probarse también en el entorno de la empresa.
 
-- [ ] Probar con planillas y vouchers reales de la empresa y ajustar los sinónimos de columnas (`src/lib/importacion-campos.ts`).
-- [ ] Activar `ANTHROPIC_API_KEY` y probar fotos de planillas, vouchers y PDF reales.
-- [ ] Registro de devoluciones desde la ficha del alumno (la tabla y las alertas ya existen).
-- [ ] Generación automática de mensualidades el día 1 de cada mes (tarea programada).
-- [ ] Exportar a Excel el listado de alumnos y la ficha de estado de cuenta por alumno/apoderado.
-- [ ] Preguntas en lenguaje natural en el buscador ("¿quiénes deben agosto?", "¿cuánto recaudamos en agosto?") usando IA sobre consultas predefinidas.
-- [x] Base de datos oficial creada en Supabase (São Paulo) con migraciones y seguridad RLS → [docs/07-base-oficial.md](07-base-oficial.md).
-- [ ] Pasar el proyecto Supabase a plan Pro antes del uso diario con datos reales (respaldos automáticos).
-- [ ] Cambiar la contraseña de la base oficial (quedó visible en una captura): Supabase → Database → Settings → Reset database password, y actualizar solo `.env.oficial`.
-- [ ] Hosting de la aplicación: elegir proveedor, dominio, HTTPS (ver más abajo).
+## Versión 2 — Flota y conductores
 
-## Versión 2 — Flota: buses, conductores, documentos y mantenciones
+Control de buses, fichas de conductor, carga de nóminas, vencimientos de documentos, lectura asistida de adjuntos, kilometraje y planes de mantención por fecha o km. El panel recibe las alertas y los informes muestran gastos por bus, documentos y conductores.
 
-Nuevas tablas previstas (se relacionan con lo existente):
+En el piloto se revisarán los vencimientos de los primeros documentos y se ajustarán los avisos de cada tipo.
 
-- `conductores` (rol de `personas`): licencia, clase, vencimiento.
-- `documentos_control`: documento con vencimiento de un bus o conductor (revisión técnica, SOAP, permiso de circulación, seguro, MTT, licencia, certificados, capacitaciones). Fecha de emisión, vencimiento y archivo adjunto (la IA lee la foto y propone las fechas).
-- `planes_mantencion` y `mantenciones`: por kilometraje o fecha (aceite, neumáticos, frenos, correas, batería…), con costo por bus.
-- `lecturas_kilometraje`.
+## Versión 3 — Cotizaciones, viajes y contratos
 
-Alertas nuevas (solo se agrega un generador por regla, el motor ya existe): revisión técnica / SOAP / permiso / seguro / MTT por vencer y vencidos; licencias y certificados de conductores; mantención por km ("Bus 17: próxima mantención en 1.000 km") o por fecha.
+Las cotizaciones aceptadas se pueden convertir en viajes. Cada viaje registra estado, fecha, cliente, servicio, bus, conductor y preparación de documentos. Los contratos registran vigencia y adjuntos privados. La app genera la cotización y el borrador de contrato en PDF y avisa de vencimientos y preparativos pendientes.
 
-Informes: documentos vencidos y por vencer, gastos de mantención, costos por bus, conductores.
+Antes de operar, revisa la plantilla contractual de la empresa y el flujo de aprobación de cotizaciones y contratos.
 
-## Versión 3 — Servicios, cotizaciones y contratos
+## Versión 4 — Conciliación bancaria avanzada
 
-- `cotizaciones` → `servicios_realizados` (viajes especiales y turismo): cliente, fecha, bus y conductor asignados, documentación.
-- `contratos`: partes, vigencia, montos, archivo; alertas a 30 / 7 días y vencido.
-- Generación de documentos (cotización y contrato en PDF/Word desde plantillas).
-- Recordatorios: servicio próximo, cotización pendiente, conductor/bus sin asignar.
+Definir bancos o agregadores, evaluar sus APIs, guardar formatos específicos de cartola y ampliar las reglas de conciliación manteniendo la confirmación humana cuando haya dudas.
 
-## Versión 4 — Conciliación bancaria avanzada e IA
+## Despliegue
 
-- Importación de cartolas por banco con formatos guardados.
-- Evaluar API bancaria (o agregadores) para traer movimientos automáticamente.
-- Conciliación automática de alta confianza (siempre con revisión de lo dudoso).
-- Asistente de preguntas: "¿cuánto genera cada bus?", "¿qué bus necesita mantención?", "¿qué servicios tenemos esta semana?".
-
-## Hosting (cuando terminemos las pruebas locales)
-
-Opciones a evaluar: VPS con Docker (control total, costo bajo), o Vercel/Netlify + PostgreSQL administrado (Supabase, Neon, RDS). Requisitos: HTTPS, respaldos diarios automáticos fuera del servidor, almacenamiento de archivos (S3/R2 — solo hay que cambiar `src/server/almacenamiento.ts`) y variables de entorno de producción.
+El piloto usa Render y un proyecto de Supabase separado de producción. Los pasos de despliegue están en la [guía de pruebas en línea](08-pruebas-en-linea.md). La [revisión de requisitos](09-auditoria-requisitos-2027.md) detalla qué está implementado y qué necesita validación.

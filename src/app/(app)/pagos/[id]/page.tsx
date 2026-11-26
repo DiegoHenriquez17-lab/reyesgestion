@@ -4,7 +4,7 @@ import { requerirUsuario } from "@/server/auth/sesion";
 import { obtenerPago } from "@/server/modulos/pagos";
 import { sugerirConciliacion, umbralSugerencia } from "@/server/modulos/conciliacion";
 import { listarAlumnos } from "@/server/modulos/alumnos";
-import { AccionConMotivo, BotonAccion } from "@/components/ui/acciones";
+import { AccionConMotivo } from "@/components/ui/acciones";
 import { Aviso, DatoFicha, EncabezadoPagina, Pesos, Tarjeta } from "@/components/ui/basicos";
 import { EstadoPagoInsignia } from "@/components/ui/estados";
 import { MEDIO_PAGO_ETIQUETA, ORIGEN_PAGO_ETIQUETA } from "@/lib/constantes";
@@ -152,9 +152,9 @@ export default async function DetallePago({ params, searchParams }: { params: Pr
               </p>
               <div className="flex flex-wrap gap-2">
                 {pago.estadoVerificacion !== "verificado" && (
-                  <BotonAccion accion={accionVerificar.bind(null, pago.id)} ocultos={{ estado: "verificado" }} variante="exito">
-                    Confirmar dinero recibido
-                  </BotonAccion>
+                  <AccionConMotivo accion={accionVerificar.bind(null, pago.id)} ocultos={{ estado: "verificado" }} texto="Confirmar dinero recibido" variante="exito" titulo="Verificar pago" requiereMotivo={false}>
+                    <label className="text-sm">Motivo si afecta un mes cerrado<input name="motivo" className="campo" /></label>
+                  </AccionConMotivo>
                 )}
                 {pago.estadoVerificacion === "por_verificar" && (
                   <AccionConMotivo accion={accionVerificar.bind(null, pago.id)} ocultos={{ estado: "rechazado" }} texto="Rechazar" variante="peligro" titulo="Rechazar pago" />

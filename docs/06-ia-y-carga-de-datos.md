@@ -10,6 +10,8 @@
 | PDF | Importar datos | Lo lee la IA (también PDF escaneados). |
 | Foto (celular) | Importar datos → Tomar foto · Panel → Subir voucher | La IA transcribe planillas, vouchers o documentos. |
 | Cartola bancaria | Importar datos → Pagos | Excel del banco; se marca "dinero confirmado" y se sugiere a quién corresponde cada movimiento. |
+| Nómina de conductores | Importar datos → Conductores | Propone fichas de conductor y sus vencimientos de licencia. |
+| Documentos de flota y contratos | Control de flota y Operaciones | Lee una foto, PDF o Word y muestra una propuesta antes de guardar el formulario. |
 
 ## Flujo obligatorio
 
@@ -40,7 +42,7 @@ Los nombres de columna habituales están en `src/lib/importacion-campos.ts` (ej.
 Implementado en `src/server/importacion/ia.ts`:
 
 - Instrucciones explícitas: transcribir solo lo legible; si hay duda → dato vacío. Nunca deducir a qué alumno corresponde un pago si el documento no lo dice (el nombre de la transferencia va a "quién paga", no a "alumno").
-- Cada dato vuelve con confianza **alta / media / baja**. Lo de confianza baja se marca "Lectura dudosa: revisar contra el documento" y la fila pasa a *Requiere revisión*.
+- Cada dato vuelve con confianza **alta / media / baja**. El sistema deja en blanco los valores de confianza media o baja y muestra la advertencia correspondiente. En la revisión, el usuario puede corregir la fila desde el original.
 - Los datos vacíos se muestran como **"Información no identificada / requiere revisión"**.
 - La foto/PDF original se muestra al lado de los datos extraídos para comparar.
 - La respuesta completa de la IA queda guardada en la importación (trazabilidad).
@@ -59,6 +61,12 @@ Sugiere los meses a los que se aplicaría. **El usuario confirma.** Si no hay co
 
 La sensibilidad se ajusta en Configuración → *Coincidencia mínima para sugerir*.
 
-## Costos de IA
+## Proveedor principal y respaldo
 
-Cada lectura es una llamada a la API de Anthropic (se cobra por uso). Una foto de voucher es una lectura pequeña; un PDF largo cuesta más. El modelo y la profundidad de análisis se configuran en `.env.local` (`AI_MODEL`, `AI_EFFORT`).
+Para el piloto gratuito, crea una clave de [Google AI Studio](https://aistudio.google.com/apikey) y otra de [Groq Console](https://console.groq.com/keys). Guárdalas en `.env.local` como `GEMINI_API_KEY` y `GROQ_API_KEY`. Con `AI_PROVEEDOR_PRINCIPAL=gemini`, Gemini lee primero. Si la lectura falla por cuota o indisponibilidad, la app intenta con Qwen en Groq. Este perfil usa únicamente ese par. Reinicia el servidor después de editar el archivo.
+
+Gemini recibe el PDF directamente. El respaldo gratuito convierte hasta dos páginas a imágenes para cada lectura con Groq. Para un PDF más largo, divídelo si Gemini está caído. Para el piloto utiliza comprobantes y documentos ficticios. [Condiciones de Gemini](https://aistudio.google.com/docs/terms) · [Límites de Groq](https://console.groq.com/docs/rate-limits)
+
+Configura `ANTHROPIC_API_KEY` y `OPENAI_API_KEY`. `AI_PROVEEDOR_PRINCIPAL=anthropic` usa Claude primero. Con `AI_PROVEEDOR_PRINCIPAL=openai` se invierte el orden. Si el proveedor falla por disponibilidad, autorización, cuota, tiempo de espera o respuesta incompleta o inválida, el otro proveedor configurado recibe la lectura. Ante un rechazo explícito de contenido, se solicita revisión manual. La revisión muestra quién leyó el documento y la auditoría guarda proveedor, modelo y uso del respaldo.
+
+`AI_MODEL`, `AI_EFFORT`, `OPENAI_MODEL` y `AI_TIMEOUT_MS` configuran cada lectura. Su costo depende del proveedor y del documento. Una lectura correcta usa un proveedor. Si ambos devuelven error, puedes volver a intentar o cargar manualmente los datos.

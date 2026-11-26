@@ -7,6 +7,7 @@ import {
   analizarImportacion,
   cancelarImportacion,
   confirmarMapeo,
+  corregirFila,
   decidirFila,
   decidirPorAccion,
   iniciarImportacion,
@@ -47,6 +48,11 @@ export async function accionConfirmarMapeo(id: number, _: unknown, fd: FormData)
   });
 }
 
+export async function accionCorregirFila(id: number, filaId: number, _: unknown, fd: FormData) {
+  const entrada = Object.fromEntries([...fd.entries()].filter((e): e is [string, string] => typeof e[1] === "string"));
+  return ejecutarAccion((ctx) => corregirFila(ctx, id, filaId, entrada), { revalidar: [`/importar/${id}`], alertas: false, mensaje: "Fila corregida. Revisa la nueva propuesta." });
+}
+
 export async function accionReanalizar(id: number) {
   return ejecutarAccion(() => analizarImportacion(id), { revalidar: [`/importar/${id}`], alertas: false, mensaje: "Análisis actualizado." });
 }
@@ -68,7 +74,7 @@ export async function accionDecidirTodas(id: number, _: unknown, fd: FormData) {
 
 export async function accionAplicar(id: number) {
   return ejecutarAccion((ctx) => aplicarImportacion(ctx, id), {
-    revalidar: ["/", "/alumnos", "/pagos", `/importar/${id}`],
+    revalidar: ["/", "/alumnos", "/pagos", "/flota", `/importar/${id}`],
     mensaje: (c) =>
       `Listo: ${c.aplicadas} guardado(s), ${c.omitidas} omitido(s)` +
       (c.errores ? `, ${c.errores} con error (revísalos abajo)` : "") +

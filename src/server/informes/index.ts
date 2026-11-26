@@ -5,6 +5,7 @@ import {
   alumnoResponsables,
   alumnos,
   buses,
+  cierresMes,
   devoluciones,
   mensualidades,
   pagoAplicaciones,
@@ -15,17 +16,19 @@ import {
 import { leerConfig } from "@/server/configuracion";
 import { entorno } from "@/server/entorno";
 import { hoy } from "@/server/fechas";
-import { finDeMes, sumarMeses } from "@/lib/fechas";
+import { finDeMes, sumarDias, sumarMeses } from "@/lib/fechas";
 import { formatearFechaHora, formatearPeriodo, nombreCompleto, nombreMes } from "@/lib/formato";
 import { formatearRut } from "@/lib/rut";
 import type { CodigoInforme, FilaInforme, Indicador, Informe, SeccionInforme } from "@/lib/informe";
 import { ESTADO_CONCILIACION_ETIQUETA, ESTADO_VERIFICACION_ETIQUETA, MEDIO_PAGO_ETIQUETA } from "@/lib/constantes";
+import { listarConductores, listarDocumentosControl, listarMantenciones } from "@/server/modulos/flota";
+import { informeOperaciones } from "./operaciones";
 
 const OTROS = "Otros servicios";
 
-async function encabezado() {
+async function encabezado(tx: DbOTx = db) {
   return {
-    empresa: String(await leerConfig("empresa.nombre")),
+    empresa: String(await leerConfig("empresa.nombre", tx)),
     generadoEn: formatearFechaHora(new Date(), entorno.APP_TIMEZONE),
   };
 }
@@ -138,8 +141,8 @@ function etiquetaEstadoFila(f: { estado: string; monto: number; recaudado: numbe
   return "Pendiente";
 }
 
-export async function informeRecaudacion(periodo: string): Promise<Informe> {
-  const [enc, filas, r] = await Promise.all([encabezado(), detalleRecaudacion(periodo), resumenRecaudacion(periodo)]);
+export async function informeRecaudacion(periodo: string, tx: DbOTx = db, resumen?: Awaited<ReturnType<typeof resumenRecaudacion>>): Promise<Informe> {
+  const [enc, filas, r] = await Promise.all([encabezado(tx), detalleRecaudacion(periodo, tx), resumen ?? resumenRecaudacion(periodo, tx)]);
   const secciones: SeccionInforme[] = agruparPorBus(filas).map(([titulo, lista]) => {
     const filasInf: FilaInforme[] = lista.map((f) => ({
       alumno: nombreCompleto(f),
@@ -275,6 +278,7 @@ async function informeListaPagos(
   subtitulo?: string,
 ): Promise<Informe> {
   const enc = await encabezado();
+  const porApoderado = codigo === "pagos_apoderado";
   const lista = await db.query.pagos.findMany({
     where: condicion,
     with: { alumno: { with: { persona: true } }, pagador: true },
@@ -293,6 +297,23 @@ async function informeListaPagos(
     monto: p.monto,
     sinAsignar: p.monto - p.montoAplicado,
   }));
+  let secciones: SeccionInforme[] = [{ filas }];
+  if (codigo === "pagos_alumno" || porApoderado) {
+    const titulares = porApoderado ? await db.select({ alumnoId: alumnoResponsables.alumnoId, persona: personas }).from(alumnoResponsables)
+      .innerJoin(personas, eq(personas.id, alumnoResponsables.personaId)).where(eq(alumnoResponsables.esTitular, true)) : [];
+    const titularPorAlumno = new Map(titulares.map((t) => [t.alumnoId, t.persona]));
+    const grupos = new Map<string, { titulo: string; filas: FilaInforme[] }>();
+    lista.forEach((p, i) => {
+      const persona = porApoderado ? p.pagador ?? titularPorAlumno.get(p.alumnoId ?? 0) : p.alumno?.persona;
+      const clave = persona ? `persona-${persona.id}` : porApoderado && p.nombreOrigen ? `origen-${p.nombreOrigen.toLowerCase()}` : "sin_asignar";
+      const titulo = persona ? nombreCompleto(persona) : porApoderado ? p.nombreOrigen ?? "Sin responsable identificado" : "Sin alumno asignado";
+      const grupo = grupos.get(clave) ?? { titulo, filas: [] };
+      grupo.filas.push(filas[i]);
+      grupos.set(clave, grupo);
+    });
+    secciones = [...grupos.values()].sort((a, b) => a.titulo.localeCompare(b.titulo, "es")).map((g) => ({ ...g,
+      subtotal: { origen: "Subtotal", monto: sumaCampo(g.filas, "monto"), sinAsignar: sumaCampo(g.filas, "sinAsignar") } }));
+  }
   return {
     codigo,
     titulo,
@@ -315,9 +336,28 @@ async function informeListaPagos(
       { clave: "monto", titulo: "Monto", tipo: "pesos", ancho: 12 },
       { clave: "sinAsignar", titulo: "Sin asignar", tipo: "pesos", ancho: 12 },
     ],
-    secciones: [{ filas }],
+    secciones,
     totalGeneral: { origen: "TOTAL", monto: sumaCampo(filas, "monto"), sinAsignar: sumaCampo(filas, "sinAsignar") },
   };
+}
+
+async function informeIngresosPorServicio(periodo: string): Promise<Informe> {
+  const [enc, datos] = await Promise.all([encabezado(), detalleRecaudacion(periodo)]);
+  const porServicio = new Map<string, { servicio: string; esperado: number; recaudado: number; porVerificar: number }>();
+  for (const d of datos) {
+    const servicio = d.servicio ?? "Sin servicio asignado";
+    const fila = porServicio.get(servicio) ?? { servicio, esperado: 0, recaudado: 0, porVerificar: 0 };
+    fila.esperado += d.monto;
+    fila.recaudado += d.recaudado;
+    fila.porVerificar += d.porVerificar;
+    porServicio.set(servicio, fila);
+  }
+  const filas = [...porServicio.values()].sort((a, b) => a.servicio.localeCompare(b.servicio, "es"));
+  return { ...enc, codigo: "ingresos_servicio", titulo: `Ingresos por servicio · ${formatearPeriodo(periodo)}`,
+    columnas: [{ clave: "servicio", titulo: "Servicio" }, { clave: "esperado", titulo: "Esperado", tipo: "pesos" },
+      { clave: "recaudado", titulo: "Recaudado", tipo: "pesos" }, { clave: "porVerificar", titulo: "Por verificar", tipo: "pesos" }],
+    secciones: [{ filas }], totalGeneral: { servicio: "TOTAL GENERAL", esperado: sumaCampo(filas, "esperado"),
+      recaudado: sumaCampo(filas, "recaudado"), porVerificar: sumaCampo(filas, "porVerificar") } };
 }
 
 async function recaudadoPorMesYBus(anio: number) {
@@ -431,12 +471,54 @@ export async function informeComparacionMensual(anio: number): Promise<Informe> 
 }
 
 /** Punto de entrada único: genera cualquier informe del catálogo. */
-export async function generarInforme(codigo: CodigoInforme, p: { periodo?: string; anio?: number }): Promise<Informe> {
+async function informeDocumentos(vencidos: boolean): Promise<Informe> {
+  const [enc, registros] = await Promise.all([encabezado(), listarDocumentosControl()]);
+  const inicio = hoy();
+  const fin = sumarDias(inicio, 60);
+  const filas = registros.filter(({ documento }) => vencidos ? documento.fechaVencimiento < inicio
+    : documento.fechaVencimiento >= inicio && documento.fechaVencimiento <= fin).map(({ documento, bus, nombres, apellidos }) => ({
+      titular: bus ? `Bus ${bus}` : nombreCompleto({ nombres: nombres ?? "", apellidos }),
+      tipo: documento.tipo, emision: documento.fechaEmision, vencimiento: documento.fechaVencimiento, observaciones: documento.observaciones,
+    }));
+  return { ...enc, codigo: vencidos ? "documentos_vencidos" : "documentos_por_vencer", titulo: vencidos ? "Documentos vencidos" : "Documentos por vencer",
+    columnas: [{ clave: "titular", titulo: "Bus o conductor" }, { clave: "tipo", titulo: "Documento" },
+      { clave: "emision", titulo: "Emisión", tipo: "fecha" }, { clave: "vencimiento", titulo: "Vencimiento", tipo: "fecha" },
+      { clave: "observaciones", titulo: "Observaciones" }], secciones: [{ filas }] };
+}
+
+async function informeMantenciones(anio: number): Promise<Informe> {
+  const [enc, registros] = await Promise.all([encabezado(), listarMantenciones()]);
+  const grupos = agruparPorBus(registros.filter(({ mantencion }) => mantencion.fecha.startsWith(`${anio}-`)).map(({ mantencion, numero }) => ({
+    busNumero: numero, bus: `Bus ${numero}`, tarea: mantencion.tarea, fecha: mantencion.fecha, kilometraje: mantencion.kilometraje, costo: mantencion.costo,
+  })));
+  const secciones = grupos.map(([titulo, filas]) => ({ titulo, filas, subtotal: { bus: titulo, costo: sumaCampo(filas, "costo") } }));
+  return { ...enc, codigo: "gastos_mantencion", titulo: `Gastos de mantención · ${anio}`,
+    columnas: [{ clave: "bus", titulo: "Bus" }, { clave: "tarea", titulo: "Mantención" }, { clave: "fecha", titulo: "Fecha", tipo: "fecha" },
+      { clave: "kilometraje", titulo: "Kilometraje", tipo: "numero" }, { clave: "costo", titulo: "Costo", tipo: "pesos" }],
+    secciones, totalGeneral: { bus: "TOTAL GENERAL", costo: sumaCampo(secciones.map((s) => s.subtotal), "costo") } };
+}
+
+async function informeConductores(): Promise<Informe> {
+  const [enc, registros] = await Promise.all([encabezado(), listarConductores()]);
+  const filas = registros.map(({ persona, conductor }) => ({ nombre: nombreCompleto(persona), rut: persona.rut ? formatearRut(persona.rut) : null,
+    telefono: persona.telefono, clase: conductor.claseLicencia, estado: conductor.activo ? "Activo" : "Inactivo" }));
+  return { ...enc, codigo: "conductores", titulo: "Conductores",
+    columnas: [{ clave: "nombre", titulo: "Conductor" }, { clave: "rut", titulo: "RUT" }, { clave: "telefono", titulo: "Teléfono" },
+      { clave: "clase", titulo: "Clase de licencia" }, { clave: "estado", titulo: "Estado" }], secciones: [{ filas }] };
+}
+
+export async function generarInforme(codigo: CodigoInforme, p: { periodo?: string; anio?: number; cierre?: boolean }): Promise<Informe> {
   const periodo = p.periodo ?? `${hoy().slice(0, 7)}-01`;
   const anio = p.anio ?? Number(hoy().slice(0, 4));
   switch (codigo) {
-    case "recaudacion":
+    case "recaudacion": {
+      if (p.cierre) {
+        const [c] = await db.select({ resumen: cierresMes.resumen }).from(cierresMes).where(eq(cierresMes.periodo, periodo));
+        const archivado = c?.resumen.informe as Informe | undefined;
+        if (archivado) return { ...archivado, subtitulo: ["Informe guardado al cierre", archivado.subtitulo].filter(Boolean).join(" · ") };
+      }
       return informeRecaudacion(periodo);
+    }
     case "morosidad":
       return informeMorosidad();
     case "por_verificar":
@@ -448,15 +530,31 @@ export async function generarInforme(codigo: CodigoInforme, p: { periodo?: strin
         and(isNull(pagos.anuladoEn), eq(pagos.estadoVerificacion, "verificado"), ne(pagos.estadoConciliacion, "conciliado")),
       );
     case "pagos_recibidos":
+    case "pagos_alumno":
+    case "pagos_apoderado":
       return informeListaPagos(
-        "pagos_recibidos",
-        `Pagos recibidos — ${formatearPeriodo(periodo)}`,
+        codigo,
+        `${codigo === "pagos_alumno" ? "Pagos por alumno" : codigo === "pagos_apoderado" ? "Pagos por apoderado o pagador" : "Pagos recibidos"} · ${formatearPeriodo(periodo)}`,
         and(isNull(pagos.anuladoEn), sql`${pagos.fechaPago} between ${periodo} and ${finDeMes(periodo)}`),
       );
     case "ingresos_bus":
       return informeIngresosPorBus(anio);
+    case "ingresos_servicio":
+      return informeIngresosPorServicio(periodo);
     case "comparacion_mensual":
       return informeComparacionMensual(anio);
+    case "documentos_vencidos":
+      return informeDocumentos(true);
+    case "documentos_por_vencer":
+      return informeDocumentos(false);
+    case "gastos_mantencion":
+      return informeMantenciones(anio);
+    case "conductores":
+      return informeConductores();
+    case "cotizaciones":
+    case "servicios_realizados":
+    case "contratos":
+      return informeOperaciones(codigo, anio);
   }
 }
 

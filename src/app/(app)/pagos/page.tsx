@@ -40,6 +40,7 @@ export default async function PaginaPagos({ searchParams }: { searchParams: Prom
         descripcion={`${lista.length} pago(s) · ${total.toLocaleString("es-CL", { style: "currency", currency: "CLP" })}`}
         acciones={
           <>
+            <BotonEnlace href="/devoluciones" variante="secundario">Devoluciones</BotonEnlace>
             <BotonEnlace href="/importar?destino=pagos" variante="secundario">
               Importar cartola
             </BotonEnlace>

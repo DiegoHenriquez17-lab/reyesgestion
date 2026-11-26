@@ -1,4 +1,4 @@
-﻿<#
+<#
   REYES GESTIÓN — Respaldo de la base de datos (pg_dump, formato comprimido).
 
   Uso:
@@ -9,8 +9,7 @@
   Programado: Programador de tareas de Windows → acción:
     powershell -ExecutionPolicy Bypass -File "C:\ruta\al\proyecto\scripts\db\respaldo.ps1" -Archivo .env.oficial
 
-  Restaurar (en una base vacía):
-    pg_restore --no-owner --no-privileges -d "URI_DE_LA_BASE" archivo.dump
+  Restaurar en una base nueva: ver docs/08-pruebas-en-linea.md.
 #>
 param(
   [string]$Archivo = ".env.local",

@@ -1,5 +1,7 @@
 import type { Modulo } from "@/lib/constantes";
 import type { UmbralAlerta } from "@/server/db/schema";
+import { TIPOS_CONTROL_BUS, TIPOS_CONTROL_CONDUCTOR } from "@/lib/flota";
+import { normalizarTexto } from "@/lib/texto";
 
 /**
  * Reglas de alerta iniciales. `pnpm db:seed` las inserta UNA vez; después se configuran
@@ -17,7 +19,29 @@ export type ReglaPorDefecto = {
   parametros: Record<string, number | string | boolean>;
 };
 
+const avisosVencimiento: UmbralAlerta[] = [
+  { dias: 60, nivel: "info" }, { dias: 30, nivel: "amarillo" }, { dias: 7, nivel: "naranja" }, { dias: -1, nivel: "rojo" },
+];
+
+function reglasDocumentos(modulo: "buses" | "conductores", tipos: string[]): ReglaPorDefecto[] {
+  return tipos.map((tipo) => ({
+    codigo: `${modulo}.documento.${normalizarTexto(tipo).replaceAll(" ", "_")}`, modulo, nombre: `${tipo} por vencer / vencido`,
+    descripcion: `Control de vigencia de ${tipo.toLowerCase()}.`, umbrales: avisosVencimiento, parametros: { tipo },
+  }));
+}
+
 export const REGLAS_POR_DEFECTO: ReglaPorDefecto[] = [
+  ...reglasDocumentos("buses", TIPOS_CONTROL_BUS),
+  ...reglasDocumentos("conductores", TIPOS_CONTROL_CONDUCTOR),
+  { codigo: "mantenciones.fecha", modulo: "mantenciones", nombre: "Mantención por fecha", descripcion: "Planes activos cerca de su fecha objetivo.", umbrales: avisosVencimiento, parametros: {} },
+  { codigo: "mantenciones.kilometraje", modulo: "mantenciones", nombre: "Mantención por kilometraje", descripcion: "Planes activos según la última lectura. Los umbrales de esta regla se expresan en km.",
+    umbrales: [{ dias: 1000, nivel: "amarillo" }, { dias: 500, nivel: "naranja" }, { dias: 0, nivel: "rojo" }], parametros: {} },
+  { codigo: "contratos.vencimiento", modulo: "contratos", nombre: "Vencimiento de contrato", descripcion: "Contratos activos próximos a vencer o vencidos.",
+    umbrales: [{ dias: 30, nivel: "amarillo" }, { dias: 7, nivel: "naranja" }, { dias: -1, nivel: "rojo" }], parametros: {} },
+  { codigo: "servicios.viaje", modulo: "servicios", nombre: "Viaje próximo y preparación", descripcion: "Estado del viaje, asignación de bus y conductor, y documentación.",
+    umbrales: [{ dias: 7, nivel: "amarillo" }, { dias: 2, nivel: "naranja" }, { dias: -1, nivel: "rojo" }], parametros: {} },
+  { codigo: "servicios.cotizacion", modulo: "servicios", nombre: "Cotización pendiente", descripcion: "Cotizaciones por resolver según la fecha del servicio.",
+    umbrales: [{ dias: 15, nivel: "amarillo" }, { dias: 3, nivel: "naranja" }, { dias: -1, nivel: "rojo" }], parametros: {} },
   {
     codigo: "pagos.mensualidad",
     modulo: "pagos",
@@ -69,6 +93,14 @@ export const REGLAS_POR_DEFECTO: ReglaPorDefecto[] = [
       { dias: -20, nivel: "rojo" },
     ],
     parametros: {},
+  },
+  {
+    codigo: "pagos.conciliado",
+    modulo: "pagos",
+    nombre: "Pago conciliado recientemente",
+    descripcion: "Notifica los pagos verificados que quedaron completamente conciliados.",
+    umbrales: [],
+    parametros: { dias: 7, nivel: "info" },
   },
   {
     codigo: "pagos.deuda_antigua",

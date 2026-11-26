@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import { db, type DbOTx } from "@/server/db";
-import { alumnoResponsables, alumnos, devoluciones, pagos, personaAlias, personas } from "@/server/db/schema";
+import { alumnoResponsables, alumnos, conductores, contratos, cotizaciones, devoluciones, pagos, personaAlias, personas, viajes } from "@/server/db/schema";
 import { auditar, calcularCambios, type Contexto } from "@/server/auditoria";
 import { ErrorNegocio } from "@/server/errores";
 import { esquemaPersona, parsearParcial, type DatosPersona } from "@/lib/validaciones";
@@ -141,6 +141,13 @@ export async function fusionarPersonas(ctx: Contexto, principalId: number, dupli
     if (alumnoP && alumnoD) {
       throw new ErrorNegocio("Ambas personas tienen ficha de alumno. Revisa y elimina una de las fichas de alumno antes de fusionar.");
     }
+    const [conductorP] = await tx.select({ id: conductores.id }).from(conductores).where(eq(conductores.personaId, principalId));
+    const [conductorD] = await tx.select({ id: conductores.id }).from(conductores).where(eq(conductores.personaId, duplicadoId));
+    if (conductorP && conductorD) throw new ErrorNegocio("Ambas personas tienen ficha de conductor. Revisa sus asignaciones antes de fusionarlas.");
+    if (conductorD) await tx.update(conductores).set({ personaId: principalId }).where(eq(conductores.id, conductorD.id));
+    await tx.update(cotizaciones).set({ clienteId: principalId }).where(eq(cotizaciones.clienteId, duplicadoId));
+    await tx.update(viajes).set({ clienteId: principalId }).where(eq(viajes.clienteId, duplicadoId));
+    await tx.update(contratos).set({ clienteId: principalId }).where(eq(contratos.clienteId, duplicadoId));
 
     // Completar datos vacíos del principal con los del duplicado
     const completar: Partial<DatosPersona> = {};
@@ -219,7 +226,13 @@ export async function relacionesDePersona(personaId: number) {
     limit: 50,
   });
   const alias = await db.select().from(personaAlias).where(eq(personaAlias.personaId, personaId));
-  return { comoAlumno, comoResponsable, pagosRealizados, alias };
+  const [[conductor], clienteCotizaciones, clienteViajes, clienteContratos] = await Promise.all([
+    db.select().from(conductores).where(eq(conductores.personaId, personaId)),
+    db.select().from(cotizaciones).where(eq(cotizaciones.clienteId, personaId)).orderBy(desc(cotizaciones.fechaSolicitud)).limit(30),
+    db.select().from(viajes).where(eq(viajes.clienteId, personaId)).orderBy(desc(viajes.fecha)).limit(30),
+    db.select().from(contratos).where(eq(contratos.clienteId, personaId)).orderBy(desc(contratos.fechaVencimiento)).limit(30),
+  ]);
+  return { comoAlumno, comoResponsable, pagosRealizados, alias, conductor, clienteCotizaciones, clienteViajes, clienteContratos };
 }
 
 export async function listarPersonas(q: string | undefined, limite = 100) {

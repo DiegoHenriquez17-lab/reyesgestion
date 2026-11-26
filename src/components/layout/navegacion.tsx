@@ -10,6 +10,7 @@ import {
   CalendarCheck,
   CalendarClock,
   FileBarChart,
+  ClipboardList,
   History,
   LayoutDashboard,
   Lock,
@@ -20,6 +21,7 @@ import {
   Upload,
   Users,
   Wallet,
+  Wrench,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -44,11 +46,12 @@ const SECCIONES = [
     ],
   },
   {
-    // Versión 2 agregará aquí: Conductores, Documentos y vencimientos, Mantenciones
     titulo: "Flota y servicios",
     items: [
       { href: "/buses", texto: "Buses", icono: Bus },
+      { href: "/flota", texto: "Control de flota", icono: Wrench },
       { href: "/servicios", texto: "Servicios", icono: Route },
+      { href: "/operaciones", texto: "Viajes y contratos", icono: ClipboardList },
     ],
   },
   {

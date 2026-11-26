@@ -22,6 +22,20 @@
       "when": 1794274381759,
       "tag": "0002_seguridad_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1795574366244,
+      "tag": "0003_control_flota",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795574648755,
+      "tag": "0004_operaciones",
+      "breakpoints": true
     }
   ]
 }

@@ -20,7 +20,7 @@ export default async function PaginaCierres() {
     <>
       <EncabezadoPagina
         titulo="Cierre de mes"
-        descripcion="Al cerrar un mes se guarda una fotografía de sus totales. Después, cualquier cambio que lo afecte exige un motivo y queda marcado en la auditoría."
+        descripcion="Al cerrar un mes se guardan sus totales y el informe detallado. Las correcciones posteriores requieren un motivo registrado en auditoría."
       />
       {usuario.rol !== "consulta" && (
         <Tarjeta titulo="Cerrar un mes" className="mb-6">
@@ -63,7 +63,7 @@ export default async function PaginaCierres() {
               return (
                 <tr key={c.id}>
                   <td className="font-semibold">
-                    <Link href={`/informes/recaudacion?periodo=${c.periodo.slice(0, 7)}`} className="enlace">
+                    <Link href={`/informes/recaudacion?periodo=${c.periodo.slice(0, 7)}${c.resumen.informe ? "&cierre=1" : ""}`} className="enlace">
                       {formatearPeriodo(c.periodo)}
                     </Link>
                   </td>

@@ -8,12 +8,11 @@
  *
  *   Transversal: AUDITORÍA · ALERTAS · REGLAS_ALERTA · RECORDATORIOS · CIERRES_MES · IMPORTACIONES
  *
- * Versión 2 agregará: conductores, documentos de control (vencimientos) y mantenciones.
- * Versión 3: cotizaciones, servicios realizados y contratos.
  */
 export * from "./usuarios";
 export * from "./personas";
 export * from "./flota";
+export * from "./operaciones";
 export * from "./alumnos";
 export * from "./documentos";
 export * from "./cobranza";

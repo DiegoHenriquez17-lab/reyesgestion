@@ -60,4 +60,4 @@ La contraseña se define al crear el proyecto. Si se olvida o se filtra: en el p
 
 1. Crear el proyecto en el hosting elegido y copiar las variables de `.env.oficial` + las comunes de `.env.local` (sin `SEED_ADMIN_*` ni `DB_*`).
 2. `pnpm oficial:migrar` antes de cada despliegue que cambie el esquema.
-3. Mover los archivos de `storage-oficial/` a un almacenamiento en la nube (Supabase Storage o S3/R2: solo cambia `src/server/almacenamiento.ts`).
+3. Configurar el bucket privado de Supabase Storage y trasladar los archivos existentes de `storage-oficial/` junto con sus referencias. Ver [prueba en línea](08-pruebas-en-linea.md).

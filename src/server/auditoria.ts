@@ -1,5 +1,5 @@
 import "server-only";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { DbOTx } from "@/server/db";
 import { auditoria, cierresMes } from "@/server/db/schema";
 import { ErrorNegocio } from "@/server/errores";
@@ -63,6 +63,11 @@ export async function auditar(tx: DbOTx, ctx: Contexto, e: EventoAuditoria) {
     periodoCerrado: e.periodoCerrado ?? false,
     ip: ctx.ip ?? null,
   });
+}
+
+/** Serializa las escrituras de cobranza con la captura del cierre mensual. */
+export async function bloquearCobranza(tx: DbOTx) {
+  await tx.execute(sql`select pg_advisory_xact_lock(727002)`);
 }
 
 /** Devuelve los periodos (de la lista) que están cerrados. */

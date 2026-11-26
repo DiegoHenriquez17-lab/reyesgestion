@@ -14,7 +14,8 @@ export default async function PaginaBuses() {
     <>
       <EncabezadoPagina
         titulo="Buses"
-        descripcion="En la Versión 2 aquí se agregarán documentos, vencimientos (revisión técnica, SOAP, permisos) y mantenciones."
+        descripcion="Administra los buses y sus asignaciones."
+        acciones={<Link href="/flota" className="enlace text-sm">Control de flota y vencimientos</Link>}
       />
       <Tarjeta titulo="Agregar bus" className="mb-6">
         <FormularioBus accion={accionGuardarBus.bind(null, null)} />
