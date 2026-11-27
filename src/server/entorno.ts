@@ -19,6 +19,7 @@ const esquema = z.object({
     .transform((v) => v === "true"),
   /** Conexiones simultáneas que abre la aplicación (bajar en planes pequeños de Supabase). */
   DATABASE_MAX_CONEXIONES: z.coerce.number().int().positive().default(10),
+  DATABASE_IDLE_TIMEOUT_SEGUNDOS: z.coerce.number().int().positive().default(30),
   APP_TIMEZONE: z.string().default("America/Santiago"),
   SESSION_DIAS: z.coerce.number().int().positive().default(30),
   STORAGE_DIR: z.string().default("./storage"),

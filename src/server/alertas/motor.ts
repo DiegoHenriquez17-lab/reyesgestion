@@ -1,16 +1,28 @@
 import "server-only";
 import { and, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
-import { db } from "@/server/db";
-import { alertas, reglasAlerta } from "@/server/db/schema";
-import { guardarConfig, leerConfig } from "@/server/configuracion";
+import { db, type DbOTx } from "@/server/db";
+import { alertas, configuracion, reglasAlerta } from "@/server/db/schema";
+import { CONFIG_POR_DEFECTO, guardarConfig } from "@/server/configuracion";
 import { hoy as hoyServidor } from "@/server/fechas";
 import { NIVEL_ALERTA_PESO } from "@/lib/constantes";
 import { generadorDe, type AlertaCandidata } from "./generadores";
 
 const CLAVE_ULTIMA_EJECUCION = "alertas.ultima_ejecucion";
+const CLAVE_INTERVALO = "alertas.intervalo_minutos";
 const LOCK_ALERTAS = 727_001; // identificador arbitrario del candado de PostgreSQL
 
 export type ResultadoRecalculo = { ejecutado: boolean; nuevas: number; actualizadas: number; resueltas: number };
+
+async function tocaRecalcular(conexion: DbOTx) {
+  const filas = await conexion.select({ clave: configuracion.clave, valor: configuracion.valor })
+    .from(configuracion)
+    .where(inArray(configuracion.clave, [CLAVE_ULTIMA_EJECUCION, CLAVE_INTERVALO]));
+  const ultima = filas.find(({ clave }) => clave === CLAVE_ULTIMA_EJECUCION)?.valor;
+  const intervalo = filas.find(({ clave }) => clave === CLAVE_INTERVALO)?.valor
+    ?? CONFIG_POR_DEFECTO[CLAVE_INTERVALO].valor;
+  const dentroDelIntervalo = typeof ultima === "string" && Date.now() - Date.parse(ultima) < Number(intervalo) * 60_000;
+  return !dentroDelIntervalo;
+}
 
 /**
  * MOTOR DE ALERTAS
@@ -23,18 +35,14 @@ export type ResultadoRecalculo = { ejecutado: boolean; nuevas: number; actualiza
 export async function recalcularAlertas(opciones: { forzar?: boolean } = {}): Promise<ResultadoRecalculo> {
   const sinCambios = { ejecutado: false, nuevas: 0, actualizadas: 0, resueltas: 0 };
 
-  if (!opciones.forzar) {
-    const intervalo = await leerConfig("alertas.intervalo_minutos");
-    const ultima = (await db.query.configuracion.findFirst({
-      where: (c, { eq }) => eq(c.clave, CLAVE_ULTIMA_EJECUCION),
-    }))?.valor as string | undefined;
-    if (ultima && Date.now() - new Date(ultima).getTime() < Number(intervalo) * 60_000) return sinCambios;
-  }
+  if (!opciones.forzar && !(await tocaRecalcular(db))) return sinCambios;
 
   return db.transaction(async (tx) => {
     // Evita que dos recálculos corran al mismo tiempo
     const [{ ok }] = await tx.execute<{ ok: boolean }>(sql`select pg_try_advisory_xact_lock(${LOCK_ALERTAS}) as ok`);
     if (!ok) return sinCambios;
+    // Otra solicitud pudo actualizar las alertas entre la comprobación y el candado.
+    if (!opciones.forzar && !(await tocaRecalcular(tx))) return sinCambios;
 
     const hoy = hoyServidor();
     const reglas = await tx.select().from(reglasAlerta);

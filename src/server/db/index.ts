@@ -16,7 +16,7 @@ const cliente =
     max: entorno.DATABASE_MAX_CONEXIONES,
     prepare: entorno.DATABASE_PREPARE,
     // Cierra conexiones ociosas (importante con poolers como el de Supabase)
-    idle_timeout: 30,
+    idle_timeout: entorno.DATABASE_IDLE_TIMEOUT_SEGUNDOS,
     // Las fechas tipo DATE se manejan como texto 'YYYY-MM-DD' para evitar desfases de zona horaria.
     types: { date: { to: 1082, from: [1082], serialize: (x: string) => x, parse: (x: string) => x } },
     onnotice: () => {},

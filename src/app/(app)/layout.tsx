@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { after } from "next/server";
 import { and, eq, sql } from "drizzle-orm";
 import { Bell, LogOut, Search } from "lucide-react";
 import { requerirUsuario } from "@/server/auth/sesion";
@@ -13,8 +14,14 @@ import { accionCerrarSesion } from "../(auth)/acciones";
 
 export default async function LayoutApp({ children }: { children: React.ReactNode }) {
   const usuario = await requerirUsuario();
-  // Mantiene las alertas al día (respeta el intervalo configurado)
-  await recalcularAlertas().catch((e) => console.error("alertas", e));
+  // Sirve la página con las alertas guardadas y actualízalas tras enviar la respuesta.
+  after(async () => {
+    try {
+      await recalcularAlertas();
+    } catch (error) {
+      console.error("Error al actualizar las alertas", error);
+    }
+  });
   const [[conteo], empresa] = await Promise.all([
     db
       .select({ total: sql<number>`count(*)::int`, rojas: sql<number>`count(*) filter (where ${alertas.nivel} = 'rojo')::int` })

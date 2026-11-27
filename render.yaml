@@ -3,7 +3,7 @@ services:
     name: reyes-gestion-pruebas
     runtime: node
     plan: free
-    autoDeployTrigger: 'off'
+    autoDeployTrigger: commit
     buildCommand: pnpm install --frozen-lockfile --prod=false && pnpm build
     startCommand: pnpm db:migrar && pnpm db:seed && pnpm start --hostname 0.0.0.0
     healthCheckPath: /login
@@ -18,6 +18,8 @@ services:
         sync: false
       - key: DATABASE_MAX_CONEXIONES
         value: '5'
+      - key: DATABASE_IDLE_TIMEOUT_SEGUNDOS
+        value: '120'
       - key: STORAGE_DRIVER
         value: supabase
       - key: SUPABASE_URL
